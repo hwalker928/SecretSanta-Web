@@ -9,6 +9,8 @@ services:
       MYSQL_HOST: db
     depends_on:
       - db
+    volumes:
+      - ./config.json:/usr/src/app/config.json
     ports:
       - "5000:5000"
     restart: on-failure

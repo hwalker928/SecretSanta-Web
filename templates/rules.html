@@ -82,20 +82,18 @@
       <h2>
         There is a maximum budget of <b>£{{config["budget"]}}</b> to spend.
       </h2>
-      <h3>
-        You have been selected...
-        <b id="recipient" style="display: none">{{chosen_recipient_capital}}</b>
-        <button
-          id="revealBtn"
-          class="btn btn-outline-primary"
-          onclick="revealRecipient()"
-        >
-          TAP TO REVEAL
-        </button>
-      </h3>
+      <h3>You have been selected...</h3>
+      <b id="recipient" style="display: none">{{chosen_recipient_capital}}</b>
+      <button
+        id="revealBtn"
+        class="btn btn-outline-primary"
+        onclick="revealRecipient()"
+      >
+        TAP TO REVEAL
+      </button>
 
       {% if reroll_enabled %}
-      <div id="rerollSection" class="fade-in hidden mt-8">
+      <div id="rerollSection" class="fade-in hidden mt-8" style="border: 1px solid #ccc; background-color: #e9ecef; padding: 15px; border-radius: 5px;"></div>
         <h3>Reroll</h3>
         <p>
           You have one chance to reroll and be selected a new person to buy for.
