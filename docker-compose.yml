@@ -2,9 +2,11 @@ services:
   web:
     image: ghcr.io/hwalker928/secretsanta:latest
     environment:
-      REROLL_ENABLED: true
       ADMIN_USER: Harry
       VALID_NAMES: alice,ben,charlie,david
+      BUDGET: 10
+
+      REROLL_ENABLED: true
 
       MYSQL_DATABASE: secretsanta
       MYSQL_USER: santa
@@ -12,8 +14,6 @@ services:
       MYSQL_HOST: db
     depends_on:
       - db
-    volumes:
-      - ./config.json:/usr/src/app/config.json
     ports:
       - "5000:5000"
     restart: on-failure

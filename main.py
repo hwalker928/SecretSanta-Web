@@ -1,8 +1,9 @@
-from flask import Flask, render_template, redirect, request, jsonify
+from flask import Flask, render_template, redirect, jsonify
 import mysql.connector
 import random
 import logging
 import os
+import datetime
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -13,6 +14,8 @@ config = {
     "reroll_enabled": os.getenv("REROLL_ENABLED", "true").lower() == "true",
     "admin_user": os.getenv("ADMIN_USER", "admin"),
     "names": os.getenv("VALID_NAMES", "").split(","),
+    "year": os.getenv("YEAR", datetime.datetime.now().year),
+    "budget": os.getenv("BUDGET", "10")
 }
 
 app = Flask(__name__)
