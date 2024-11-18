@@ -159,7 +159,7 @@ def reroll(firstname):
 if __name__ == "__main__":
     try:
         with connect_db() as db:
-            with db.cursor() as cursor:
+            with db.cursor(buffered=True) as cursor:
                 cursor.execute("SHOW TABLES LIKE 'recipients'")
                 result = cursor.fetchone()
                 if not result:
