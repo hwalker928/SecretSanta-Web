@@ -61,7 +61,7 @@ def name(firstname: str):
 
     try:
         with connect_db() as database:
-            with database.cursor(dictionary=True) as cursor:
+            with database.cursor(dictionary=True, buffered=True) as cursor:
                 # Check if the user has already been assigned a recipient
                 cursor.execute(
                     "SELECT * FROM recipients WHERE name = %s AND recipient != ''",
@@ -123,7 +123,7 @@ def reroll(firstname):
 
     try:
         with connect_db() as database:
-            with database.cursor(dictionary=True) as cursor:
+            with database.cursor(dictionary=True, buffered=True) as cursor:
                 # Reset the recipient
                 cursor.execute("UPDATE recipients SET recipient = '' WHERE name = %s", (firstname_lower,))
 

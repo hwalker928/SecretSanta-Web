@@ -16,7 +16,7 @@ services:
       - db
     ports:
       - "5000:5000"
-    restart: on-failure
+    restart: always
 
   db:
     image: mysql:latest
@@ -27,6 +27,7 @@ services:
       MYSQL_PASSWORD: SantasLittleHelper2024
     volumes:
       - db_data:/var/lib/mysql
+    restart: always
 
   phpmyadmin:
     image: phpmyadmin/phpmyadmin
