@@ -1,7 +1,6 @@
 services:
   web:
-    build: .
-    command: python main.py
+    image: ghcr.io/hwalker928/secretsanta:latest
     environment:
       MYSQL_DATABASE: secretsanta
       MYSQL_USER: santa
