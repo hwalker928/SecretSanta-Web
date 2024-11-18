@@ -1,0 +1,37 @@
+services:
+  web:
+    build: .
+    command: python main.py
+    environment:
+      MYSQL_DATABASE: secretsanta
+      MYSQL_USER: santa
+      MYSQL_PASSWORD: SantasLittleHelper2024
+      MYSQL_HOST: db
+    depends_on:
+      - db
+    ports:
+      - "5000:5000"
+    restart: on-failure
+
+  db:
+    image: mysql:latest
+    environment:
+      MYSQL_ROOT_PASSWORD: SantasLittleHelper2024
+      MYSQL_DATABASE: secretsanta
+      MYSQL_USER: santa
+      MYSQL_PASSWORD: SantasLittleHelper2024
+    volumes:
+      - db_data:/var/lib/mysql
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    environment:
+      PMA_HOST: db
+      PMA_PORT: 3306
+    ports:
+      - "8080:80"
+    depends_on:
+      - db
+
+volumes:
+  db_data:

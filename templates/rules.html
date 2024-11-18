@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>Secret Santa {{config["year"]}}</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link
+      rel="stylesheet"
+      href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css"
+    />
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.16.0/umd/popper.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <style>
+      body {
+        padding: 10px;
+        background-color: #f8f9fa;
+        font-family: Arial, sans-serif;
+      }
+
+      .footer {
+        position: fixed;
+        left: 0;
+        bottom: 0;
+        width: 100%;
+        text-align: center;
+        padding: 10px;
+        background-color: #f1f1f1;
+        border-top: 1px solid #e7e7e7;
+      }
+
+      .content {
+        max-width: 600px;
+        margin: auto;
+        text-align: center;
+      }
+
+      .content img {
+        display: block;
+        margin: 20px auto;
+        max-width: 100%;
+        height: auto;
+      }
+
+      .content h2,
+      .content h3,
+      .content p {
+        margin-bottom: 20px;
+      }
+
+      .btn-outline-primary,
+      .btn-outline-danger,
+      .btn-outline-success {
+        margin-top: 10px;
+      }
+
+      .fade-in {
+        opacity: 0;
+        transition: opacity 1s ease-in;
+      }
+
+      .fade-in.show {
+        opacity: 1;
+      }
+
+      .hidden {
+        display: none;
+      }
+
+      .actions {
+        margin-top: 20px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="content">
+      <img
+        src="{{ url_for('static', filename='ss24.png') }}"
+        alt="Secret Santa"
+      />
+      <h2>
+        There is a maximum budget of <b>£{{config["budget"]}}</b> to spend.
+      </h2>
+      <h3>
+        You have been selected...
+        <b id="recipient" style="display: none">{{chosen_recipient_capital}}</b>
+        <button
+          id="revealBtn"
+          class="btn btn-outline-primary"
+          onclick="revealRecipient()"
+        >
+          TAP TO REVEAL
+        </button>
+      </h3>
+
+      {% if reroll_enabled %}
+      <div id="rerollSection" class="fade-in hidden mt-8">
+        <h3>Reroll</h3>
+        <p>
+          You have one chance to reroll and be selected a new person to buy for.
+        </p>
+        <button
+          id="rerollBtn"
+          class="btn btn-outline-danger"
+          onclick="rerollRecipient()"
+        >
+          REROLL
+        </button>
+        <button
+          id="keepBtn"
+          class="btn btn-outline-success"
+          disabled
+          onclick="keepRecipient()"
+        >
+          KEEP
+        </button>
+        <div id="rerollStatus" class="text-danger hidden"></div>
+      </div>
+      {% endif %}
+
+      <div id="finalMessage" class="fade-in hidden">
+        <p>You may now close this page!</p>
+        <p>
+          If you need to generate for other people as well, please close the
+          page, then reclick on the link.
+        </p>
+      </div>
+    </div>
+
+    <div class="footer">
+      <p>Website created by <b>Harry W.</b> - {{config["year"]}}</p>
+    </div>
+
+    <script>
+      let rerollUsed = false;
+
+      function revealRecipient() {
+        // Show the recipient name
+        const recipient = document.getElementById("recipient");
+        recipient.style.display = "inline";
+        document.getElementById("rerollSection").classList.add("show");
+        document.getElementById("rerollSection").classList.remove("hidden");
+        document.getElementById("keepBtn").disabled = false; // Enable "Keep" button
+        document.getElementById("revealBtn").remove();
+      }
+
+      async function rerollRecipient() {
+        if (!rerollUsed) {
+          try {
+            rerollUsed = true;
+
+            // Disable the "Keep" button
+            document.getElementById("keepBtn").disabled = true;
+
+            // Show loading state
+            const status = document.getElementById("rerollStatus");
+            status.innerText = "Rerolling...";
+            status.classList.remove("hidden");
+
+            // Make POST request to /reroll endpoint
+            const response = await fetch("/reroll/{{ firstname }}", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+            });
+
+            if (!response.ok) {
+              throw new Error("Failed to reroll. Please try again later.");
+            }
+
+            const data = await response.json();
+
+            // Update the recipient name
+            document.getElementById("recipient").innerText = data.newName;
+
+            // Clear loading state
+            status.classList.add("hidden");
+
+            // Disable the "Reroll" button
+            document.getElementById("rerollBtn").disabled = true;
+
+            keepRecipient();
+          } catch (error) {
+            // Show error message
+            document.getElementById("rerollStatus").innerText = error.message;
+          }
+        }
+      }
+
+      function keepRecipient() {
+        document.getElementById("rerollSection").remove();
+        document.getElementById("finalMessage").classList.add("show");
+        document.getElementById("finalMessage").classList.remove("hidden");
+      }
+    </script>
+  </body>
+</html>
