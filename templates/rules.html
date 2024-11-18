@@ -83,7 +83,9 @@
         There is a maximum budget of <b>£{{config["budget"]}}</b> to spend.
       </h2>
       <h3>You have been selected...</h3>
-      <b id="recipient" style="display: none">{{chosen_recipient_capital}}</b>
+      <h2>
+        <b id="recipient" style="display: none">{{chosen_recipient_capital}}</b>
+      </h2>
       <button
         id="revealBtn"
         class="btn btn-outline-primary"
@@ -95,12 +97,13 @@
       {% if reroll_enabled %}
       <div
         id="rerollSection"
-        class="fade-in hidden mt-8"
+        class="fade-in hidden"
         style="
           border: 1px solid #ccc;
           background-color: #e9ecef;
           padding: 15px;
           border-radius: 5px;
+          margin-top: 30px;
         "
       >
         <h3>Reroll</h3>
