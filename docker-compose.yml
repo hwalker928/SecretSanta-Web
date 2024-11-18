@@ -2,6 +2,10 @@ services:
   web:
     image: ghcr.io/hwalker928/secretsanta:latest
     environment:
+      REROLL_ENABLED: true
+      ADMIN_USER: Harry
+      VALID_NAMES: alice,ben,charlie,david
+
       MYSQL_DATABASE: secretsanta
       MYSQL_USER: santa
       MYSQL_PASSWORD: SantasLittleHelper2024

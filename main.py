@@ -1,37 +1,48 @@
-from flask import Flask, render_template, redirect
+from flask import Flask, render_template, redirect, request, jsonify
 import mysql.connector
 import random
-import json
+import logging
 import os
 
-f = open("config.json")
-config = json.load(f)
+# Configure logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+
+# Load configuration
+config = {
+    "port": int(os.getenv("APP_PORT", 5000)),
+    "reroll_enabled": os.getenv("REROLL_ENABLED", "true").lower() == "true",
+    "admin_user": os.getenv("ADMIN_USER", "admin"),
+    "names": os.getenv("VALID_NAMES", "").split(","),
+}
 
 app = Flask(__name__)
 
-
+# Database connection function
 def connect_db():
-    return mysql.connector.connect(
-        host=os.getenv("MYSQL_HOST"),
-        user=os.getenv("MYSQL_USER"),
-        password=os.getenv("MYSQL_PASSWORD"),
-        database=os.getenv("MYSQL_DATABASE"),
-    )
-
+    try:
+        return mysql.connector.connect(
+            host=os.getenv("MYSQL_HOST"),
+            user=os.getenv("MYSQL_USER"),
+            password=os.getenv("MYSQL_PASSWORD"),
+            database=os.getenv("MYSQL_DATABASE"),
+        )
+    except mysql.connector.Error as e:
+        logging.error(f"Database connection failed: {e}")
+        raise
 
 @app.route("/")
 def main():
     return render_template("index.html")
 
-
 @app.route("/rules/<firstname>/<recipient>")
 def rules(firstname, recipient):
-    chosen_recipient_capital = recipient.capitalize()
-
     return render_template(
-        "rules.html", chosen_recipient_capital=chosen_recipient_capital, config=config, firstname=firstname, reroll_enabled=config["reroll_enabled"]
+        "rules.html",
+        chosen_recipient_capital=recipient.capitalize(),
+        config=config,
+        firstname=firstname,
+        reroll_enabled=config["reroll_enabled"]
     )
-
 
 @app.route("/name/<firstname>")
 def name(firstname: str):
@@ -39,102 +50,118 @@ def name(firstname: str):
     if firstname_lower not in config["names"]:
         return render_template(
             "error.html",
-            message=f"Oh no! Make sure you have spelt your name correctly (I know, it is possible to spell your own name wrong sometimes.), else contact {config['admin_user']} if you believe there is a mistake.",
+            message=(
+                "Oh no! Make sure you have spelled your name correctly. "
+                f"Contact {config['admin_user']} if you believe there is a mistake."
+            ),
         )
 
-    # Database connection
-    database = connect_db()
-    cursor = database.cursor()
+    try:
+        with connect_db() as database:
+            with database.cursor(dictionary=True) as cursor:
+                # Check if the user has already been assigned a recipient
+                cursor.execute(
+                    "SELECT * FROM recipients WHERE name = %s AND recipient != ''",
+                    (firstname_lower,)
+                )
+                if cursor.fetchone():
+                    return render_template(
+                        "error.html",
+                        message=f"You have already been assigned a recipient. Contact {config['admin_user']} for assistance."
+                    )
 
-    # Check if the user hasn't already been assigned a recipient
-    cursor.execute(
-        "SELECT * FROM recipients WHERE name = %s AND recipient = ''", (firstname_lower,)
-    )
-    result = cursor.fetchall()
-    if not len(result) > 0:
-        return render_template(
-            "error.html",
-            message=f"Oh no! It seems you have already been assigned a recipient. If you have forgotten who you were assigned, please contact {config['admin_user']}.",
-        )
-    
-    # Choose random recipient
-    cursor.execute("SELECT name FROM recipients WHERE name NOT IN (SELECT recipient FROM recipients) AND name != %s", (firstname_lower,))
-    available_recipients = [row[0] for row in cursor.fetchall()]
+                # Get available recipients
+                cursor.execute(
+                    "SELECT name FROM recipients WHERE name NOT IN "
+                    "(SELECT recipient FROM recipients) AND name != %s",
+                    (firstname_lower,)
+                )
+                available_recipients = [row["name"] for row in cursor.fetchall()]
 
-    if not available_recipients:
-        return render_template(
-            "error.html",
-            message=f"Oh no! It seems there are no available recipients left. Please contact {config['admin_user']} for assistance.",
-        )
+                if not available_recipients:
+                    return render_template(
+                        "error.html",
+                        message="No available recipients left. Contact admin for assistance."
+                    )
 
-    chosen_recipient = random.choice(available_recipients)
+                chosen_recipient = random.choice(available_recipients)
 
-    cursor.execute("DELETE FROM recipients WHERE name = %s", (firstname_lower,))
+                # Update the database with the assigned recipient
+                cursor.execute(
+                    "INSERT INTO recipients (name, recipient) VALUES (%s, %s) "
+                    "ON DUPLICATE KEY UPDATE recipient = %s",
+                    (firstname_lower, chosen_recipient, chosen_recipient)
+                )
+                database.commit()
 
-    sql = "INSERT INTO recipients (name, recipient) VALUES (%s, %s)"
-    val = (firstname_lower, chosen_recipient)
-    cursor.execute(sql, val)
+        return redirect(f"/rules/{firstname_lower}/{chosen_recipient}")
 
-    database.commit()
-    database.close()
-
-    return redirect(f"/rules/{firstname_lower}/{chosen_recipient}")
-
+    except mysql.connector.Error as e:
+        logging.error(f"Database error: {e}")
+        return render_template("error.html", message="Internal server error. Please try again later.")
 
 @app.route("/reroll/<firstname>", methods=["POST"])
 def reroll(firstname):
     if not config["reroll_enabled"]:
         return render_template(
             "error.html",
-            message=f"Oh no! Rerolling is disabled. Please contact {config['admin_user']} if you believe there is a mistake.",
+            message="Rerolling is disabled. Contact admin for assistance."
         )
 
     firstname_lower = firstname.lower()
     if firstname_lower not in config["names"]:
         return render_template(
             "error.html",
-            message=f"Oh no! Make sure you have spelt your name correctly (I know, it is possible to spell your own name wrong sometimes.), else contact {config['admin_user']} if you believe there is a mistake.",
-        )
-    
-    # Database connection
-    database = connect_db()
-    cursor = database.cursor()
-    
-    cursor.execute(
-        "UPDATE recipients SET recipient = '' WHERE name = %s", (firstname_lower,)
-    )
-     
-    # Choose random recipient
-    cursor.execute("SELECT name FROM recipients WHERE name NOT IN (SELECT recipient FROM recipients) AND name != %s", (firstname_lower,))
-    available_recipients = [row[0] for row in cursor.fetchall()]
-
-    if not available_recipients:
-        return render_template(
-            "error.html",
-            message=f"Oh no! It seems there are no available recipients left. Please contact {config['admin_user']} for assistance.",
+            message=(
+                "Oh no! Make sure you have spelled your name correctly. "
+                f"Contact {config['admin_user']} if you believe there is a mistake."
+            ),
         )
 
-    chosen_recipient = random.choice(available_recipients)
+    try:
+        with connect_db() as database:
+            with database.cursor(dictionary=True) as cursor:
+                # Reset the recipient
+                cursor.execute("UPDATE recipients SET recipient = '' WHERE name = %s", (firstname_lower,))
 
-    sql = "UPDATE recipients SET recipient = %s WHERE name = %s"
-    val = (chosen_recipient, firstname_lower)
-    cursor.execute(sql, val)
+                # Get new available recipients
+                cursor.execute(
+                    "SELECT name FROM recipients WHERE name NOT IN "
+                    "(SELECT recipient FROM recipients) AND name != %s",
+                    (firstname_lower,)
+                )
+                available_recipients = [row["name"] for row in cursor.fetchall()]
 
-    database.commit()
-    database.close()
+                if not available_recipients:
+                    return render_template(
+                        "error.html",
+                        message="No available recipients left. Contact admin for assistance."
+                    )
 
-    # JSON return
-    return json.dumps({"newName": chosen_recipient.capitalize()})
+                chosen_recipient = random.choice(available_recipients)
 
+                # Update the database with the new recipient
+                cursor.execute(
+                    "UPDATE recipients SET recipient = %s WHERE name = %s",
+                    (chosen_recipient, firstname_lower)
+                )
+                database.commit()
+
+        return jsonify({"newName": chosen_recipient.capitalize()})
+
+    except mysql.connector.Error as e:
+        logging.error(f"Database error: {e}")
+        return render_template("error.html", message="Internal server error. Please try again later.")
 
 if __name__ == "__main__":
-    db = connect_db()
-    cursor = db.cursor()
-
-    # Check if tables exist, if not, import db_setup
-    cursor.execute("SHOW TABLES LIKE 'recipients'")
-    result = cursor.fetchone()
-    if not result:
-        import db_setup
-
-    app.run(host="0.0.0.0", debug=False, port=config["port"])
+    try:
+        with connect_db() as db:
+            with db.cursor() as cursor:
+                cursor.execute("SHOW TABLES LIKE 'recipients'")
+                result = cursor.fetchone()
+                if not result:
+                    import db_setup
+                    db_setup.setup(config["names"])
+        app.run(host="0.0.0.0", debug=False, port=config["port"])
+    except Exception as e:
+        logging.critical(f"Failed to start the application: {e}")
