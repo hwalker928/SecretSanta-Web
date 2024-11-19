@@ -56,7 +56,7 @@ def name(firstname: str):
         return render_template(
             "error.html",
             message=(
-                "Oh no! Make sure you have spelled your name correctly. "
+                "Oh no! Make sure you have spelled your name correctly you idiot. "
                 f"Contact {config['admin_user']} if you believe there is a mistake."
             ),
         )
