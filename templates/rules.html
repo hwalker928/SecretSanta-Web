@@ -141,6 +141,10 @@
       </div>
     </div>
 
+    <div class="footer">
+      <p>Website created by <b>Harry W.</b> - {{config["year"]}}</p>
+    </div>
+
     <script>
       let rerollUsed = false;
 
@@ -157,10 +161,10 @@
       async function rerollRecipient() {
         if (!rerollUsed) {
           try {
-            rerollUsed = false;
+            rerollUsed = true;
 
             // Disable the "Keep" button
-            //document.getElementById("keepBtn").disabled = true;
+            document.getElementById("keepBtn").disabled = true;
 
             // Show loading state
             const status = document.getElementById("rerollStatus");
@@ -186,7 +190,7 @@
             status.classList.add("hidden");
 
             // Disable the "Reroll" button
-            //document.getElementById("rerollBtn").disabled = true;
+            document.getElementById("rerollBtn").disabled = true;
 
             keepRecipient();
           } catch (error) {
@@ -197,7 +201,7 @@
       }
 
       function keepRecipient() {
-        //document.getElementById("rerollSection").remove();
+        document.getElementById("rerollSection").remove();
         document.getElementById("finalMessage").classList.add("show");
         document.getElementById("finalMessage").classList.remove("hidden");
       }
