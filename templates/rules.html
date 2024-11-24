@@ -179,12 +179,17 @@
 
             if (!response.ok) {
               errorSwal("Failed to reroll. Please try again later.");
+              status.classList.add("hidden");
+              rerollUsed = false;
+              return;
             }
 
             const data = await response.json();
 
             if (data.error) {
               errorSwal(data.error);
+              status.classList.add("hidden");
+              rerollUsed = false;
               return;
             }
 
