@@ -11,7 +11,7 @@ services:
       VALID_NAMES: alice,ben,charlie,david
       BUDGET: 10
 
-      REROLL_ENABLED: true
+      REROLL_COUNT: 1 # Set to 0 to disable rerolls
 
       REDIS_HOST: redis
     depends_on:

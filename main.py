@@ -13,7 +13,7 @@ logging.basicConfig(
 # Load configuration
 config = {
     "port": int(os.getenv("APP_PORT", 5000)),
-    "reroll_enabled": os.getenv("REROLL_ENABLED", "true").lower() == "true",
+    "reroll_count": int(os.getenv("REROLL_COUNT", 0)),
     "admin_user": os.getenv("ADMIN_USER", "admin"),
     "names": os.getenv("VALID_NAMES", "").split(","),
     "year": os.getenv("YEAR", datetime.datetime.now().year),
@@ -52,7 +52,7 @@ def rules(firstname, recipient):
         chosen_recipient_capital=recipient.capitalize(),
         config=config,
         firstname=firstname,
-        reroll_enabled=config["reroll_enabled"],
+        reroll_limit=config["reroll_count"],
     )
 
 
@@ -105,9 +105,10 @@ def name(firstname: str):
 
 @app.route("/reroll/<firstname>", methods=["POST"])
 def reroll(firstname):
-    if not config["reroll_enabled"]:
+    if config["reroll_count"] == 0:
         return render_template(
-            "error.html", message="Rerolling is disabled. Contact admin for assistance."
+            "error.html",
+            message=f"Rerolling is disabled. Contact {config['admin_user']} for assistance.",
         )
 
     firstname_lower = firstname.lower()
@@ -120,11 +121,25 @@ def reroll(firstname):
             ),
         )
 
+    if int(redis_client.get(f"rerolls:{firstname_lower}")) >= config["reroll_count"]:
+        return render_template(
+            "error.html",
+            message=(
+                "You have already used your rerolls. "
+                f"Contact {config['admin_user']} if you believe there is a mistake."
+            ),
+        )
+
     try:
         # Remove the current assignment
         old_recipient = redis_client.get(f"recipient:{firstname_lower}")
         if old_recipient:
             redis_client.srem("assigned_recipients", old_recipient)
+        else:
+            return render_template(
+                "error.html",
+                message=f"You have not been assigned a recipient yet. Contact {config['admin_user']} for assistance.",
+            )
 
         # Get new available recipients
         all_names = set(config["names"])
@@ -142,6 +157,7 @@ def reroll(firstname):
         # Assign the new recipient
         redis_client.set(f"recipient:{firstname_lower}", chosen_recipient)
         redis_client.sadd("assigned_recipients", chosen_recipient)
+        redis_client.incr(f"rerolls:{firstname_lower}")
 
         return jsonify({"newName": chosen_recipient.capitalize()})
 
@@ -156,11 +172,10 @@ if __name__ == "__main__":
     try:
         # Initialize the recipient assignments in Redis if not already done
         if not redis_client.exists("assigned_recipients"):
-            redis_client.delete("assigned_recipients")  # Reset any existing data
+            redis_client.delete("assigned_recipients")
             for name in config["names"]:
-                redis_client.set(
-                    f"recipient:{name.lower()}", ""
-                )  # No recipient assigned initially
+                redis_client.set(f"recipient:{name.lower()}", "")
+                redis_client.set(f"rerolls:{name.lower()}", 0)
 
         app.run(host="0.0.0.0", debug=False, port=config["port"])
     except Exception as e:
