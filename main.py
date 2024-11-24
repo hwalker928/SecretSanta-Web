@@ -106,28 +106,24 @@ def name(firstname: str):
 @app.route("/reroll/<firstname>", methods=["POST"])
 def reroll(firstname):
     if config["reroll_count"] == 0:
-        return render_template(
-            "error.html",
-            message=f"Rerolling is disabled. Contact {config['admin_user']} for assistance.",
-        )
+        return jsonify({"error": "Rerolls are disabled."})
 
     firstname_lower = firstname.lower()
     if firstname_lower not in config["names"]:
-        return render_template(
-            "error.html",
-            message=(
-                "Oh no! Make sure you have spelled your name correctly. "
-                f"Contact {config['admin_user']} if you believe there is a mistake."
-            ),
+        return jsonify(
+            {
+                "error": (
+                    "Please make sure that you have spelled your name correctly. "
+                    f"Contact {config['admin_user']} if you believe there is a mistake."
+                )
+            }
         )
 
     if int(redis_client.get(f"rerolls:{firstname_lower}")) >= config["reroll_count"]:
-        return render_template(
-            "error.html",
-            message=(
-                "You have already used your rerolls. "
-                f"Contact {config['admin_user']} if you believe there is a mistake."
-            ),
+        return jsonify(
+            {
+                "error": f"You have reached the maximum number of rerolls ({config['reroll_count']})."
+            }
         )
 
     try:
@@ -136,9 +132,10 @@ def reroll(firstname):
         if old_recipient:
             redis_client.srem("assigned_recipients", old_recipient)
         else:
-            return render_template(
-                "error.html",
-                message=f"You have not been assigned a recipient yet. Contact {config['admin_user']} for assistance.",
+            return jsonify(
+                {
+                    "error": "You have not been assigned a recipient yet. Contact admin for assistance."
+                }
             )
 
         # Get new available recipients
@@ -147,9 +144,8 @@ def reroll(firstname):
         available_recipients = list(all_names - assigned_recipients - {firstname_lower})
 
         if not available_recipients:
-            return render_template(
-                "error.html",
-                message="No available recipients left. Contact admin for assistance.",
+            return jsonify(
+                {"error": "No available recipients left. Contact admin for assistance."}
             )
 
         chosen_recipient = random.choice(available_recipients)

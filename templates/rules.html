@@ -177,10 +177,15 @@
             });
 
             if (!response.ok) {
-              throw new Error("Failed to reroll. Please try again later.");
+              errorSwal("Failed to reroll. Please try again later.");
             }
 
             const data = await response.json();
+
+            if (data.error) {
+              errorSwal(data.error);
+              return;
+            }
 
             // Update the recipient name
             document.getElementById("recipient").innerText = data.newName;
@@ -197,6 +202,17 @@
             document.getElementById("rerollStatus").innerText = error.message;
           }
         }
+      }
+
+      function errorSwal(message) {
+        swal({
+          text: message,
+          icon: "error",
+          button: {
+            text: "Close",
+            closeModal: true,
+          },
+        });
       }
 
       function keepRecipient() {
