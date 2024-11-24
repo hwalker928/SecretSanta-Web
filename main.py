@@ -6,7 +6,9 @@ import os
 import datetime
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
 # Load configuration
 config = {
@@ -15,10 +17,11 @@ config = {
     "admin_user": os.getenv("ADMIN_USER", "admin"),
     "names": os.getenv("VALID_NAMES", "").split(","),
     "year": os.getenv("YEAR", datetime.datetime.now().year),
-    "budget": os.getenv("BUDGET", "10")
+    "budget": os.getenv("BUDGET", "10"),
 }
 
 app = Flask(__name__)
+
 
 # Connect to Redis
 def connect_redis():
@@ -27,17 +30,20 @@ def connect_redis():
             host=os.getenv("REDIS_HOST", "redis"),
             port=int(os.getenv("REDIS_PORT", 6379)),
             db=0,
-            decode_responses=True
+            decode_responses=True,
         )
     except redis.ConnectionError as e:
         logging.error(f"Redis connection failed: {e}")
         raise
 
+
 redis_client = connect_redis()
+
 
 @app.route("/")
 def main():
     return render_template("index.html")
+
 
 @app.route("/rules/<firstname>/<recipient>")
 def rules(firstname, recipient):
@@ -46,8 +52,9 @@ def rules(firstname, recipient):
         chosen_recipient_capital=recipient.capitalize(),
         config=config,
         firstname=firstname,
-        reroll_enabled=config["reroll_enabled"]
+        reroll_enabled=config["reroll_enabled"],
     )
+
 
 @app.route("/name/<firstname>")
 def name(firstname: str):
@@ -56,7 +63,7 @@ def name(firstname: str):
         return render_template(
             "error.html",
             message=(
-                "Oh no! Make sure you have spelled your name correctly. "
+                "Please make sure that you have spelled your name correctly. "
                 f"Contact {config['admin_user']} if you believe there is a mistake."
             ),
         )
@@ -67,7 +74,7 @@ def name(firstname: str):
         if recipient:
             return render_template(
                 "error.html",
-                message=f"You have already been assigned a recipient. Contact {config['admin_user']} for assistance."
+                message=f"You have already been assigned a recipient. Contact {config['admin_user']} for assistance.",
             )
 
         # Get available recipients
@@ -78,7 +85,7 @@ def name(firstname: str):
         if not available_recipients:
             return render_template(
                 "error.html",
-                message="No available recipients left. Contact admin for assistance."
+                message="No available recipients left. Contact admin for assistance.",
             )
 
         chosen_recipient = random.choice(available_recipients)
@@ -91,14 +98,16 @@ def name(firstname: str):
 
     except redis.RedisError as e:
         logging.error(f"Redis error: {e}")
-        return render_template("error.html", message="Internal server error. Please try again later.")
+        return render_template(
+            "error.html", message="Internal server error. Please try again later."
+        )
+
 
 @app.route("/reroll/<firstname>", methods=["POST"])
 def reroll(firstname):
     if not config["reroll_enabled"]:
         return render_template(
-            "error.html",
-            message="Rerolling is disabled. Contact admin for assistance."
+            "error.html", message="Rerolling is disabled. Contact admin for assistance."
         )
 
     firstname_lower = firstname.lower()
@@ -125,7 +134,7 @@ def reroll(firstname):
         if not available_recipients:
             return render_template(
                 "error.html",
-                message="No available recipients left. Contact admin for assistance."
+                message="No available recipients left. Contact admin for assistance.",
             )
 
         chosen_recipient = random.choice(available_recipients)
@@ -138,7 +147,10 @@ def reroll(firstname):
 
     except redis.RedisError as e:
         logging.error(f"Redis error: {e}")
-        return render_template("error.html", message="Internal server error. Please try again later.")
+        return render_template(
+            "error.html", message="Internal server error. Please try again later."
+        )
+
 
 if __name__ == "__main__":
     try:
@@ -146,7 +158,9 @@ if __name__ == "__main__":
         if not redis_client.exists("assigned_recipients"):
             redis_client.delete("assigned_recipients")  # Reset any existing data
             for name in config["names"]:
-                redis_client.set(f"recipient:{name.lower()}", "")  # No recipient assigned initially
+                redis_client.set(
+                    f"recipient:{name.lower()}", ""
+                )  # No recipient assigned initially
 
         app.run(host="0.0.0.0", debug=False, port=config["port"])
     except Exception as e:
