@@ -110,8 +110,7 @@
         <p>
           You have <b>one chance</b> to reroll and be selected a new person to
           buy for. If you choose to reroll, you <b>will not</b> be able to go
-          back to the original recipient. There is a chance that you get the
-          same person again.
+          back. You may get the same person again.
         </p>
         <button
           id="rerollBtn"
@@ -133,12 +132,11 @@
       {% endif %}
 
       <div id="finalMessage" class="fade-in hidden">
-        <h3>Rules:</h3>
-        <ol>
-          <li>Spend as close to <b>£{{config["budget"]}}</b> as possible.</li>
-          <li>Keep your recipient a secret!</li>
-          <li>Multiple presents are allowed.</li>
-          <li>
+        <h3 style="margin-top: 40px">Rules:</h3>
+        <ol class="list-group list-group-flush text-left">
+          <li class="list-group-item">Keep your recipient a secret!</li>
+          <li class="list-group-item">Multiple presents are allowed.</li>
+          <li class="list-group-item">
             Use
             <a
               href="https://www.sainsburys.co.uk/gol-ui/product/sainsburys-green-tree-wrapping-paper-3m"
@@ -146,9 +144,9 @@
               >this wrapping paper</a
             >.
           </li>
-          <li>No Dr Pepper t-shirts.</li>
+          <li class="list-group-item">No Dr Pepper t-shirts.</li>
         </ol>
-        <p style="margin-top: 15px">You may now close this page!</p>
+        <p style="margin-top: 30px">You may now close this page!</p>
       </div>
     </div>
 
