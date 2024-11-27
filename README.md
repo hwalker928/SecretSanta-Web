@@ -11,6 +11,8 @@ services:
       VALID_NAMES: alice,ben,charlie,david
       BUDGET: 10
 
+      URL: "http://localhost:5000"
+
       REROLL_COUNT: 1 # Set to 0 to disable rerolls
 
       REDIS_HOST: redis
