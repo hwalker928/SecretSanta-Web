@@ -56,7 +56,7 @@ def qrcodes():
         people_dict.append(
             {
                 "name": person.capitalize(),
-                "qr": f"https://api.qrserver.com/v1/create-qr-code/?data={{config['url']}}/qrscan/{person_base64_reversed}&size=150x150",
+                "qr": f"https://api.qrserver.com/v1/create-qr-code/?data={config['url']}/qrscan/{person_base64_reversed}&size=150x150",
             }
         )
 
