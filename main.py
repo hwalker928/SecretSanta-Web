@@ -80,7 +80,10 @@ def qr_toggle():
 @app.route("/qrscan/<person_base64>")
 def qrscan(person_base64):
     if int(redis_client.get("qr-active")) == 0:
-        return redirect("https://cdn.mtdv.me/video/rick.mp4")
+        return redirect("https://cdn.mtdv.me/video/last_rickmas.mp4")
+
+    if datetime.datetime.now().month != 12 or datetime.datetime.now().day != 25:
+        return redirect("https://cdn.mtdv.me/video/feliz_navidad.mp4")
 
     person = bytes.fromhex(person_base64[::-1]).decode("utf-8")
 
