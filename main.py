@@ -45,6 +45,52 @@ def main():
     return render_template("index.html")
 
 
+@app.route("/qrcodes")
+def qrcodes():
+    people = config["names"]
+    people_dict = []
+    
+    for person in people:
+        person_base64_reversed = person.encode("utf-8").hex()[::-1]
+        people_dict.append({"name": person.capitalize(), "qr": f"https://api.qrserver.com/v1/create-qr-code/?data=https://fa-ss24.hwal.uk/qr/{person_base64_reversed}&size=150x150"})
+
+    return render_template(
+        "qrcodes.html",
+        people_dict=people_dict,
+        config=config,
+        active=int(redis_client.get("qr-active")) == 1
+    )
+
+@app.route("/qr-toggle")
+def qr_toggle():
+    if int(redis_client.get("qr-active")) == 1:
+        redis_client.set("qr-active", 0)
+    else:
+        redis_client.set("qr-active", 1)
+    return redirect(f"/qrcodes")
+
+@app.route("/qr/<person_base64>")
+def qr(person_base64):
+    if int(redis_client.get("qr-active")) == 0:
+        return redirect("https://cdn.mtdv.me/video/rick.mp4")
+
+
+    person = bytes.fromhex(person_base64[::-1]).decode("utf-8")
+    
+    recipient = redis_client.get(f"recipient:{person.lower()}")
+
+    if recipient:
+        recipient = recipient.capitalize()
+    else:
+        recipient = "Not assigned yet"
+
+    return render_template(
+        "qr.html",
+        recipient=recipient.capitalize(),
+        config=config,
+    )
+
+
 @app.route("/rules/<firstname>/<recipient>")
 def rules(firstname, recipient):
     return render_template(
@@ -172,6 +218,8 @@ if __name__ == "__main__":
             for name in config["names"]:
                 redis_client.set(f"recipient:{name.lower()}", "")
                 redis_client.set(f"rerolls:{name.lower()}", 0)
+
+        redis_client.set("qr-active", 0)
 
         app.run(host="0.0.0.0", debug=False, port=config["port"])
     except Exception as e:
