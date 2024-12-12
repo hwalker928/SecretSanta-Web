@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>Secret Santa {{config["year"]}}</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://unpkg.com/sweetalert/dist/sweetalert.min.js"></script>
+    <style>
+      body {
+        padding: 10px;
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      }
+
+      .content {
+        max-width: 600px;
+        margin: auto;
+        text-align: center;
+      }
+
+      .content img {
+        display: block;
+        margin: 20px auto;
+        max-width: 100%;
+        height: auto;
+      }
+
+      .content h2,
+      .content h3,
+      .content p {
+        margin-bottom: 20px;
+      }
+
+      .btn-outline-primary,
+      .btn-outline-danger,
+      .btn-outline-success {
+        margin-top: 10px;
+      }
+
+      .fade-in {
+        opacity: 0;
+        transition: opacity 1s ease-in;
+      }
+
+      .fade-in.show {
+        opacity: 1;
+      }
+
+      .hidden {
+        display: none;
+      }
+
+      .actions {
+        margin-top: 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="content">{% block content %}{% endblock %}</div>
+  </body>
+</html>
