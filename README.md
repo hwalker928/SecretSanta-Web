@@ -9,9 +9,11 @@ services:
     environment:
       ADMIN_USER: Harry
       VALID_NAMES: alice,ben,charlie,david
-      BUDGET: 10
+      BUDGET: £10
 
       URL: "http://localhost:5000"
+
+      RULES: Keep your recipient a secret,Multiple presents are allowed,Spend as close to the budget as possible
 
       REROLL_COUNT: 1 # Set to 0 to disable rerolls
 

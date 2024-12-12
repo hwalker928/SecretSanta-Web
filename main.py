@@ -19,6 +19,7 @@ config = {
     "year": os.getenv("YEAR", datetime.datetime.now().year),
     "budget": os.getenv("BUDGET", "10"),
     "url": os.getenv("URL", "http://localhost:5000"),
+    "rules": os.getenv("RULES", "").split(","),
 }
 
 app = Flask(__name__)
