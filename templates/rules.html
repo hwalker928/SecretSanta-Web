@@ -134,9 +134,9 @@
       <div id="finalMessage" class="fade-in hidden">
         <h3 style="margin-top: 40px">Rules:</h3>
         <ol class="list-group list-group-flush text-left">
-          { % for rule in config["rules"] %}
+          {% for rule in config["rules"] %}
           <li class="list-group-item">{{rule}}</li>
-          { % endfor %}
+          {% endfor %}
         </ol>
         <p style="margin-top: 30px">
           You may now close this page! It is recommended to screenshot this
