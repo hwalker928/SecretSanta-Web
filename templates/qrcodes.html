@@ -1,6 +1,6 @@
 {% extends "base.html" %} {% block content %}
 <img src="{{ url_for('static', filename='ss24.svg') }}" alt="Secret Santa" />
-<h2>QR Codes [{% if active %}Active{% else %}Inactive{% endif %}</h2>
+<h2>QR Codes [{% if active %}Active{% else %}Inactive{% endif %}]</h2>
 <p>
   Here are the QR codes for each person in the Secret Santa {{config["year"]}}
   event.
