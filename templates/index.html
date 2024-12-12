@@ -1,25 +1,35 @@
-{% extends "base.html" %} {% block content %}
-<img src="{{ url_for('static', filename='ss24.svg') }}" alt="Secret Santa" />
-
-<form id="nameForm" action="javascript:void(0);" method="get" onsubmit="redirectToName()"></form>
-  <div class="form-group">
-    <label for="firstname">Please enter your firstname:</label>
-    <input
-      type="text"
-      class="form-control"
-      id="firstname"
-      name="firstname"
-      maxlength="16"
-      required
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>Secret Santa</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link
+      rel="stylesheet"
+      href="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css"
     />
-  </div>
-  <button type="submit" class="btn btn-primary">Continue</button>
-</form>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/js/bootstrap.min.js"></script>
+    <script src="https://unpkg.com/sweetalert/dist/sweetalert.min.js"></script>
 
-<script>
-  function redirectToName() {
-    var firstname = document.getElementById('firstname').value;
-    window.location.href = '/name/' + encodeURIComponent(firstname);
-  }
-</script>
-{% endblock %}
+    <script>
+      function askName() {
+        swal({
+          text: "Please enter your firstname",
+          content: "input",
+          icon: "info",
+          closeOnClickOutside: false,
+          closeOnEsc: false,
+          button: {
+            text: "Continue",
+            closeModal: true,
+          },
+        }).then((name) => {
+          if (!name || name.length > 16) throw null;
+          window.location.href = "/name/" + name;
+        });
+      }
+    </script>
+  </head>
+  <body onload="askName()"></body>
+</html>
