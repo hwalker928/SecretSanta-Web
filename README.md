@@ -1,5 +1,13 @@
 # Secret Santa Name Picker
 
+## Features
+
+- Random name allocation
+- Prevents being allocated yourself
+- Reroll functionality
+- Rules list
+- QR code sticker generation (read more here)
+
 ## Deploy using Docker Compose
 
 ```
