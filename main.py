@@ -4,6 +4,9 @@ import random
 import logging
 import os
 import datetime
+import qrcode
+import io
+import base64
 
 # Configure logging
 logging.basicConfig(
@@ -57,10 +60,17 @@ def qrcodes():
 
     for person in people:
         person_base64_reversed = person.encode("utf-8").hex()[::-1]
+
+        qr = qrcode.make(f"{config['url']}/qrscan/{person_base64_reversed}")
+        buffer = io.BytesIO()
+        qr.save(buffer, format="PNG")
+        qr_img_bytes = base64.b64encode(buffer.getvalue()).decode()
+        buffer.close()
+
         people_dict.append(
             {
                 "name": person.capitalize(),
-                "qr": f"https://api.qrserver.com/v1/create-qr-code/?data={config['url']}/qrscan/{person_base64_reversed}&size=200x200",
+                "qr": qr_img_bytes,
             }
         )
 

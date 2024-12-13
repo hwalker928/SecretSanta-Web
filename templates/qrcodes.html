@@ -16,7 +16,12 @@
     {% for person in people_dict %}
     <tr>
       <td>{{ person["name"] }}</td>
-      <td><img src="{{ person['qr'] }}" alt="{{ person['name'] }}" /></td>
+      <td>
+        <img
+          src="data:image/png;base64,{{ person['qr'] }}"
+          alt="{{ person['name'] }}"
+        />
+      </td>
     </tr>
     {% endfor %}
   </tbody>
