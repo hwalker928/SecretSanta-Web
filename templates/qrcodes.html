@@ -6,16 +6,38 @@
   event.
 </p>
 <table class="table table-bordered">
-  <thead>
-    <tr>
-      <th>Name</th>
-      <th>QR Code</th>
-    </tr>
-  </thead>
   <tbody>
     {% for person in people_dict %}
     <tr>
       <td>{{ person["name"] }}</td>
+      <td>
+        <img
+          src="data:image/png;base64,{{ person['qr'] }}"
+          alt="{{ person['name'] }}"
+          style="width: 100px; height: 100px"
+        />
+      </td>
+      <td>
+        <img
+          src="data:image/png;base64,{{ person['qr'] }}"
+          alt="{{ person['name'] }}"
+          style="width: 100px; height: 100px"
+        />
+      </td>
+      <td>
+        <img
+          src="data:image/png;base64,{{ person['qr'] }}"
+          alt="{{ person['name'] }}"
+          style="width: 100px; height: 100px"
+        />
+      </td>
+      <td>
+        <img
+          src="data:image/png;base64,{{ person['qr'] }}"
+          alt="{{ person['name'] }}"
+          style="width: 100px; height: 100px"
+        />
+      </td>
       <td>
         <img
           src="data:image/png;base64,{{ person['qr'] }}"
