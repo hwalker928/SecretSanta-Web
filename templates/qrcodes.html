@@ -10,41 +10,15 @@
     {% for person in people_dict %}
     <tr>
       <td>{{ person["name"] }}</td>
+      {% for i in range(0, 5) %}
       <td>
         <img
           src="data:image/png;base64,{{ person['qr'] }}"
           alt="{{ person['name'] }}"
-          style="width: 100px; height: 100px"
+          style="width: 150px; height: 150px"
         />
       </td>
-      <td>
-        <img
-          src="data:image/png;base64,{{ person['qr'] }}"
-          alt="{{ person['name'] }}"
-          style="width: 100px; height: 100px"
-        />
-      </td>
-      <td>
-        <img
-          src="data:image/png;base64,{{ person['qr'] }}"
-          alt="{{ person['name'] }}"
-          style="width: 100px; height: 100px"
-        />
-      </td>
-      <td>
-        <img
-          src="data:image/png;base64,{{ person['qr'] }}"
-          alt="{{ person['name'] }}"
-          style="width: 100px; height: 100px"
-        />
-      </td>
-      <td>
-        <img
-          src="data:image/png;base64,{{ person['qr'] }}"
-          alt="{{ person['name'] }}"
-          style="width: 100px; height: 100px"
-        />
-      </td>
+      {% endfor %}
     </tr>
     {% endfor %}
   </tbody>
