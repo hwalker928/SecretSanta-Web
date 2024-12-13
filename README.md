@@ -17,14 +17,19 @@ services:
     environment:
       ADMIN_USER: Harry
       VALID_NAMES: alice,ben,charlie,david
+
       BUDGET: £10
 
-      URL: "http://localhost:5000"
-
-      RULES: Keep your recipient a secret,Multiple presents are allowed,Spend as close to the budget as possible
+      GIVING_DAY: 25
+      GIVING_MONTH: 12
 
       REROLL_COUNT: 1 # Set to 0 to disable rerolls
 
+      RULES: Keep your recipient a secret,Multiple presents are allowed,Spend as close to the budget as possible
+
+      QR_TOGGLE_URL: qr-toggle # Set this to something random to prevent people from guessing the URL
+
+      URL: "http://localhost:5000" # This must be correct to generate QR codes
       REDIS_HOST: redis
     depends_on:
       - redis
@@ -49,5 +54,6 @@ A QR code is automatically generated per-person, which when scanned on the day t
 You can view all of the QR codes here: http://localhost:5000/qrcodes
 
 The QR codes will not be active until both of the following conditions are true:
+
 1. It is the day of giving the presents
 2. The QR codes have been activated by visiting http://localhost:5000/qr-toggle (configurable in the docker-compose.yml)

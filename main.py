@@ -20,6 +20,9 @@ config = {
     "budget": os.getenv("BUDGET", "10"),
     "url": os.getenv("URL", "http://localhost:5000"),
     "rules": os.getenv("RULES", "").split(","),
+    "qr_toggle_url": os.getenv("QR_TOGGLE_URL", "qr-toggle"),
+    "giving_day": int(os.getenv("GIVING_DAY", 25)),
+    "giving_month": int(os.getenv("GIVING_MONTH", 12)),
 }
 
 app = Flask(__name__)
@@ -69,7 +72,7 @@ def qrcodes():
     )
 
 
-@app.route("/qr-toggle")
+@app.route(f"/{config['qr_toggle_url']}")
 def qr_toggle():
     if int(redis_client.get("qr-active")) == 1:
         redis_client.set("qr-active", 0)
@@ -83,7 +86,10 @@ def qrscan(person_base64):
     if int(redis_client.get("qr-active")) == 0:
         return redirect("https://cdn.mtdv.me/video/last_rickmas.mp4")
 
-    if datetime.datetime.now().month != 12 or datetime.datetime.now().day != 25:
+    if (
+        datetime.datetime.now().month != config["giving_month"]
+        or datetime.datetime.now().day != config["giving_day"]
+    ):
         return redirect("https://cdn.mtdv.me/video/feliz_navidad.mp4")
 
     person = bytes.fromhex(person_base64[::-1]).decode("utf-8")
