@@ -1,13 +1,4 @@
 {% extends "base.html" %} {% block content %}
-<style>
-  @media print {
-    .qr-code {
-      width: 280mm;
-      height: 280mm;
-    }
-  }
-</style>
-
 <img src="{{ url_for('static', filename='ss24.svg') }}" alt="Secret Santa" />
 <h2>QR Codes [{% if active %}Active{% else %}Inactive{% endif %}]</h2>
 <p>
@@ -29,7 +20,7 @@
         <img
           src="data:image/png;base64,{{ person['qr'] }}"
           alt="{{ person['name'] }}"
-          class="qr-code"
+          style="width: 100px; height: 100px"
         />
       </td>
     </tr>

@@ -61,7 +61,7 @@ def qrcodes():
     for person in people:
         person_base64_reversed = person.encode("utf-8").hex()[::-1]
 
-        qr = qrcode.make(f"{config['url']}/qrscan/{person_base64_reversed}")
+        qr = qrcode.make(f"{config['url']}/qrscan/{person_base64_reversed}", border=1)
         buffer = io.BytesIO()
         qr.save(buffer, format="PNG")
         qr_img_bytes = base64.b64encode(buffer.getvalue()).decode()
