@@ -6,7 +6,7 @@
 - Prevents being allocated yourself
 - Reroll functionality
 - Rules list
-- QR code sticker generation (read more here)
+- QR code sticker generation (read more [here](#qr-code-stickers))
 
 ## Deploy using Docker Compose
 
@@ -41,3 +41,13 @@ services:
 volumes:
   redis_data:
 ```
+
+## QR Code Stickers
+
+A QR code is automatically generated per-person, which when scanned on the day that presents are given (configurable in the docker-compose.yml), will reveal who the present is for.
+
+You can view all of the QR codes here: http://localhost:5000/qrcodes
+
+The QR codes will not be active until both of the following conditions are true:
+1. It is the day of giving the presents
+2. The QR codes have been activated by visiting http://localhost:5000/qr-toggle (configurable in the docker-compose.yml)
