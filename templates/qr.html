@@ -1,4 +1,87 @@
-{% extends "base.html" %} {% block content %}
-<img src="{{ url_for('static', filename='ss24.svg') }}" alt="Secret Santa" />
-<h1>{{recipient}}</h1>
-{% endblock %}
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>Secret Santa {{config["year"]}}</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://unpkg.com/sweetalert/dist/sweetalert.min.js"></script>
+    <style>
+      body {
+        padding: 10px;
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        margin: 0;
+      }
+      @keyframes pulse {
+        0% {
+          transform: scale(1);
+          color: black;
+        }
+        50% {
+          transform: scale(1.2);
+          color: red;
+        }
+        100% {
+          transform: scale(1);
+          color: black;
+        }
+      }
+      .pulse {
+        animation: pulse 1s infinite;
+        animation-iteration-count: 3;
+      }
+      #result {
+        font-size: 16em;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container text-center">
+      <h1 id="result"></h1>
+    </div>
+
+    <script>
+      const names = {{names | tojson}};
+      const recipient = "{{recipient}}";
+      const result = document.getElementById("result");
+
+      function shuffle(array) {
+        for (let i = array.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [array[i], array[j]] = [array[j], array[i]];
+        }
+      }
+
+      function spin() {
+        let currentIndex = 0;
+        const interval = setInterval(() => {
+          if (currentIndex === 0) {
+            shuffle(names);
+          }
+          result.textContent = names[currentIndex];
+          currentIndex = (currentIndex + 1) % names.length;
+        }, 150);
+
+        setTimeout(() => {
+          clearInterval(interval);
+          result.textContent = recipient;
+          setTimeout(() => {
+            result.classList.add("pulse");
+          }, 200);
+        }, Math.floor(Math.random() * 21 + 34) * 150);
+
+      }
+
+      spin();
+    </script>
+  </body>
+</html>

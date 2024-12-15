@@ -111,9 +111,12 @@ def qrscan(person_base64):
     else:
         recipient = "Not assigned yet"
 
+    names = [name.capitalize() for name in config["names"]]
+
     return render_template(
         "qr.html",
         recipient=recipient.capitalize(),
+        names=names,
         config=config,
     )
 
