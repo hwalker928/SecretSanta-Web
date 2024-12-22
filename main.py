@@ -7,6 +7,9 @@ import datetime
 import qrcode
 import io
 import base64
+import dotenv
+
+dotenv.load_dotenv()
 
 # Configure logging
 logging.basicConfig(
@@ -26,6 +29,8 @@ config = {
     "qr_toggle_url": os.getenv("QR_TOGGLE_URL", "qr-toggle"),
     "giving_day": int(os.getenv("GIVING_DAY", 25)),
     "giving_month": int(os.getenv("GIVING_MONTH", 12)),
+    "use_songs": os.getenv("USE_SONGS", "false") == "true",
+    "use_qr_checks": os.getenv("DISABLE_QR_CHECKS", "false") == "false",
 }
 
 app = Flask(__name__)
@@ -93,13 +98,13 @@ def qr_toggle():
 
 @app.route("/qrscan/<person_base64>")
 def qrscan(person_base64):
-    if int(redis_client.get("qr-active")) == 0:
+    if int(redis_client.get("qr-active")) == 0 and config["use_qr_checks"]:
         return redirect("https://cdn.mtdv.me/video/last_rickmas.mp4")
 
     if (
         datetime.datetime.now().month != config["giving_month"]
         or datetime.datetime.now().day != config["giving_day"]
-    ):
+    ) and config["use_qr_checks"]:
         return redirect("https://cdn.mtdv.me/video/feliz_navidad.mp4")
 
     person = bytes.fromhex(person_base64[::-1]).decode("utf-8")
@@ -118,6 +123,29 @@ def qrscan(person_base64):
         recipient=recipient.capitalize(),
         names=names,
         config=config,
+        song=config["use_songs"]
+        and recipient != "Not assigned yet"
+        and os.path.isfile(f"static/songs/{recipient.lower()}.mp3"),
+    )
+
+
+@app.route("/qrscan-test/<recipient>")
+def qrscantest(recipient):
+    if recipient:
+        recipient = recipient.capitalize()
+    else:
+        recipient = "Not assigned yet"
+
+    names = [name.capitalize() for name in config["names"]]
+
+    return render_template(
+        "qr.html",
+        recipient=recipient.capitalize(),
+        names=names,
+        config=config,
+        song=config["use_songs"]
+        and recipient != "Not assigned yet"
+        and os.path.isfile(f"static/songs/{recipient.lower()}.mp3"),
     )
 
 

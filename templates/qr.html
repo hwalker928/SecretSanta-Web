@@ -36,8 +36,7 @@
         }
       }
       .pulse {
-        animation: pulse 1s infinite;
-        animation-iteration-count: 3;
+        animation: pulse 2s infinite;
       }
       #result {
         font-size: 16em;
@@ -47,12 +46,14 @@
   <body>
     <div class="container text-center">
       <h1 id="result"></h1>
+      <audio id="song" controls style="display: none"></audio>
     </div>
 
     <script>
       const names = {{names | tojson}};
       const recipient = "{{recipient}}";
       const result = document.getElementById("result");
+      const song = document.getElementById("song");
 
       function shuffle(array) {
         for (let i = array.length - 1; i > 0; i--) {
@@ -71,16 +72,32 @@
           currentIndex = (currentIndex + 1) % names.length;
         }, 150);
 
+        const spinDuration = Math.floor(Math.random() * 21 + 34) * 150;
+        const songStartTime = spinDuration - 500;
+
+        {% if song %}
+        setTimeout(() => {
+          const firstName = recipient.split(' ')[0];
+          song.src = `{{config["url"]}}/static/songs/${firstName.toLowerCase()}.mp3`;
+          song.play().then(() => {
+            // Autoplay started
+          }).catch((err) => {
+            // Autoplay was prevented
+            alert(err);
+          });
+        }, songStartTime);
+        {% endif %}
+
         setTimeout(() => {
           clearInterval(interval);
           result.textContent = recipient;
-          setTimeout(() => {
-            result.classList.add("pulse");
-          }, 200);
-        }, Math.floor(Math.random() * 21 + 34) * 150);
+          result.classList.add("pulse");
+        }, spinDuration);
 
+        song.addEventListener('ended', () => {
+          result.classList.remove("pulse");
+        });
       }
-
       spin();
     </script>
   </body>
