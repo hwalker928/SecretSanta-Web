@@ -7,9 +7,6 @@ import datetime
 import qrcode
 import io
 import base64
-import dotenv
-
-dotenv.load_dotenv()
 
 # Configure logging
 logging.basicConfig(

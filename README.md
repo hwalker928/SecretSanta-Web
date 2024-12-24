@@ -34,6 +34,8 @@ services:
 
       URL: "http://localhost:5000" # This must be correct to generate QR codes
       REDIS_HOST: redis
+    volumes:
+      - ./songs:/usr/src/app/static/songs # Only required if USE_SONGS is true
     depends_on:
       - redis
     ports:
