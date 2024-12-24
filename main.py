@@ -276,6 +276,9 @@ if __name__ == "__main__":
 
         redis_client.set("qr-active", 0)
 
+        print(f"Loaded {len(config['names'])} names.")
+        print(f"Loaded songs: {os.listdir('static/songs')}")
+
         app.run(host="0.0.0.0", debug=False, port=config["port"])
     except Exception as e:
         logging.critical(f"Failed to start the application: {e}")
