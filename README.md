@@ -32,14 +32,14 @@ services:
       QR_TOGGLE_URL: qr-toggle # Set this to something random to prevent people from guessing the URL
       USE_SONGS: false # Set to true to play a song per person when the QR codes are activated
 
-      URL: "http://localhost:5000" # This must be correct to generate QR codes
+      URL: "http://localhost:8000" # This must be correct to generate QR codes
       REDIS_HOST: redis
     volumes:
       - ./songs:/usr/src/app/static/songs # Only required if USE_SONGS is true
     depends_on:
       - redis
     ports:
-      - "5000:5000"
+      - "8000:8000"
     restart: always
 
   redis:
@@ -56,12 +56,12 @@ volumes:
 
 A QR code is automatically generated per-person, which when scanned on the day that presents are given (configurable in the docker-compose.yml), will reveal who the present is for.
 
-You can view all of the QR codes here: http://localhost:5000/qrcodes
+You can view all of the QR codes here: http://localhost:8000/qrcodes
 
 The QR codes will not be active until both of the following conditions are true:
 
 1. It is the day of giving the presents
-2. The QR codes have been activated by visiting http://localhost:5000/qr-toggle (configurable in the docker-compose.yml)
+2. The QR codes have been activated by visiting http://localhost:8000/qr-toggle (configurable in the docker-compose.yml)
 
 ## Songs on QR Code Activation
 

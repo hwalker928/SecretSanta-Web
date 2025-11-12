@@ -15,13 +15,13 @@ logging.basicConfig(
 
 # Load configuration
 config = {
-    "port": int(os.getenv("APP_PORT", 5000)),
+    "port": int(os.getenv("APP_PORT", 8000)),
     "reroll_count": int(os.getenv("REROLL_COUNT", 0)),
     "admin_user": os.getenv("ADMIN_USER", "admin"),
     "names": os.getenv("VALID_NAMES", "").split(","),
     "year": os.getenv("YEAR", datetime.datetime.now().year),
     "budget": os.getenv("BUDGET", "10"),
-    "url": os.getenv("URL", "http://localhost:5000"),
+    "url": os.getenv("URL", "http://localhost:8000"),
     "rules": os.getenv("RULES", "").split(","),
     "qr_toggle_url": os.getenv("QR_TOGGLE_URL", "qr-toggle"),
     "giving_day": int(os.getenv("GIVING_DAY", 25)),
@@ -146,8 +146,11 @@ def qrscantest(recipient):
     )
 
 
-@app.route("/rules/<firstname>/<recipient>")
-def rules(firstname, recipient):
+@app.route("/rules/<firstname_base64>/<recipient_base64>")
+def rules(firstname_base64, recipient_base64):
+    firstname = bytes.fromhex(firstname_base64[::-1]).decode("utf-8")
+    recipient = bytes.fromhex(recipient_base64[::-1]).decode("utf-8")
+
     return render_template(
         "rules.html",
         chosen_recipient_capital=recipient.capitalize(),
@@ -195,7 +198,10 @@ def name(firstname: str):
         redis_client.set(f"recipient:{firstname_lower}", chosen_recipient)
         redis_client.sadd("assigned_recipients", chosen_recipient)
 
-        return redirect(f"/rules/{firstname_lower}/{chosen_recipient}")
+        firstname_lower_base64 = firstname_lower.encode("utf-8").hex()[::-1]
+        chosen_recipient_base64 = chosen_recipient.encode("utf-8").hex()[::-1]
+
+        return redirect(f"/rules/{firstname_lower_base64}/{chosen_recipient_base64}")
 
     except redis.RedisError as e:
         logging.error(f"Redis error: {e}")
@@ -264,21 +270,21 @@ def reroll(firstname):
             "error.html", message="Internal server error. Please try again later."
         )
 
+# Initialize the recipient assignments in Redis if not already done
+if not redis_client.exists("assigned_recipients"):
+    redis_client.delete("assigned_recipients")
+    for name in config["names"]:
+        redis_client.set(f"recipient:{name.lower()}", "")
+        redis_client.set(f"rerolls:{name.lower()}", 0)
+
+redis_client.set("qr-active", 0)
+
+print(f"Loaded {len(config['names'])} names.")
+print(f"Loaded songs: {os.listdir('static/songs')}")
+
 
 if __name__ == "__main__":
     try:
-        # Initialize the recipient assignments in Redis if not already done
-        if not redis_client.exists("assigned_recipients"):
-            redis_client.delete("assigned_recipients")
-            for name in config["names"]:
-                redis_client.set(f"recipient:{name.lower()}", "")
-                redis_client.set(f"rerolls:{name.lower()}", 0)
-
-        redis_client.set("qr-active", 0)
-
-        print(f"Loaded {len(config['names'])} names.")
-        print(f"Loaded songs: {os.listdir('static/songs')}")
-
         app.run(host="0.0.0.0", debug=False, port=config["port"])
     except Exception as e:
         logging.critical(f"Failed to start the application: {e}")
