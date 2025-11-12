@@ -30,6 +30,19 @@ config = {
     "use_qr_checks": os.getenv("DISABLE_QR_CHECKS", "false") == "false",
 }
 
+# Optional: group definitions. Format: "group1:alice,bob;group2:carol,dave"
+name_groups_raw = os.getenv("NAME_GROUPS", "")
+name_groups = {}
+if name_groups_raw:
+    for group_spec in [g.strip() for g in name_groups_raw.split(";") if g.strip()]:
+        if ":" in group_spec:
+            group_name, members = group_spec.split(":", 1)
+            for member in [m.strip() for m in members.split(",") if m.strip()]:
+                name_groups[member.lower()] = group_name.strip()
+
+# store in config for template access
+config["name_groups"] = name_groups
+
 app = Flask(__name__)
 
 
@@ -209,7 +222,21 @@ def name(firstname: str):
         # Get available recipients
         all_names = set(config["names"])
         assigned_recipients = set(redis_client.smembers("assigned_recipients"))
-        available_recipients = list(all_names - assigned_recipients - {firstname_lower})
+        possible_recipients = list(all_names - assigned_recipients - {firstname_lower})
+
+        # Prefer recipients from different groups. NAME_GROUPS env format:
+        # "group1:alice,bob;group2:carol,dave"
+        first_group = config.get("name_groups", {}).get(firstname_lower)
+        if first_group == "grouped":
+            different_group = [n for n in possible_recipients if config.get("name_groups", {}).get(n) != first_group]
+            if different_group:
+                available_recipients = different_group
+            else:
+                # no other options, allow same-group
+                available_recipients = possible_recipients
+        else:
+            # if user has no group defined, just use possible recipients
+            available_recipients = possible_recipients
 
         if not available_recipients:
             return render_template(
@@ -273,7 +300,18 @@ def reroll(firstname):
         # Get new available recipients
         all_names = set(config["names"])
         assigned_recipients = set(redis_client.smembers("assigned_recipients"))
-        available_recipients = list(all_names - assigned_recipients - {firstname_lower})
+        possible_recipients = list(all_names - assigned_recipients - {firstname_lower})
+
+        # Prefer recipients from different groups where possible
+        first_group = config.get("name_groups", {}).get(firstname_lower)
+        if first_group == "grouped":
+            different_group = [n for n in possible_recipients if config.get("name_groups", {}).get(n) != first_group]
+            if different_group:
+                available_recipients = different_group
+            else:
+                available_recipients = possible_recipients
+        else:
+            available_recipients = possible_recipients
 
         if not available_recipients:
             return jsonify(
