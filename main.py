@@ -146,6 +146,31 @@ def qrscantest(recipient):
     )
 
 
+@app.route("/ssadmin")
+def admin():
+    names = [name.lower() for name in config["names"]]
+    unassigned = []
+
+    try:
+        for name in names:
+            recipient = redis_client.get(f"recipient:{name}")
+            # Treat empty string or None as unassigned
+            if not recipient:
+                unassigned.append(name.capitalize())
+    except redis.RedisError as e:
+        logging.error(f"Redis error while building admin list: {e}")
+        return render_template(
+            "error.html", message="Internal server error. Please try again later."
+        )
+
+    return render_template(
+        "admin.html",
+        unassigned=unassigned,
+        count=len(unassigned),
+        config=config,
+    )
+
+
 @app.route("/rules/<firstname_base64>/<recipient_base64>")
 def rules(firstname_base64, recipient_base64):
     firstname = bytes.fromhex(firstname_base64[::-1]).decode("utf-8")

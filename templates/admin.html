@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block title %}Admin - Unassigned Users{% endblock %}
+
+{% block content %}
+<h1>Unassigned Users</h1>
+<p>There are {{ count }} users who haven't used the name generator yet.</p>
+
+{% if unassigned %}
+<ul>
+  {% for name in unassigned %}
+  <li>{{ name }}</li>
+  {% endfor %}
+</ul>
+{% else %}
+<p>Everyone has been assigned a recipient.</p>
+{% endif %}
+
+<p><a href="/">Back to home</a></p>
+{% endblock %}
