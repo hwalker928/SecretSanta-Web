@@ -43,6 +43,9 @@ if name_groups_raw:
 # store in config for template access
 config["name_groups"] = name_groups
 
+
+print("Name groups loaded:", name_groups)
+
 app = Flask(__name__)
 
 
@@ -227,15 +230,13 @@ def name(firstname: str):
         # Prefer recipients from different groups. NAME_GROUPS env format:
         # "group1:alice,bob;group2:carol,dave"
         first_group = config.get("name_groups", {}).get(firstname_lower)
-        if first_group == "grouped":
+        if first_group:
             different_group = [n for n in possible_recipients if config.get("name_groups", {}).get(n) != first_group]
             if different_group:
                 available_recipients = different_group
             else:
-                # no other options, allow same-group
                 available_recipients = possible_recipients
         else:
-            # if user has no group defined, just use possible recipients
             available_recipients = possible_recipients
 
         if not available_recipients:
@@ -304,7 +305,7 @@ def reroll(firstname):
 
         # Prefer recipients from different groups where possible
         first_group = config.get("name_groups", {}).get(firstname_lower)
-        if first_group == "grouped":
+        if first_group:
             different_group = [n for n in possible_recipients if config.get("name_groups", {}).get(n) != first_group]
             if different_group:
                 available_recipients = different_group
@@ -312,6 +313,8 @@ def reroll(firstname):
                 available_recipients = possible_recipients
         else:
             available_recipients = possible_recipients
+        
+        print("Available recipients for reroll:", available_recipients)
 
         if not available_recipients:
             return jsonify(
