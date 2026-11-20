@@ -40,24 +40,30 @@ services:
       USE_SONGS: false # Set to true to play a song per person when the QR codes are activated
 
       URL: "http://localhost:8000" # This must be correct to generate QR codes
-      REDIS_HOST: redis
+      VALKEY_HOST: valkey
     volumes:
       - ./songs:/usr/src/app/static/songs # Only required if USE_SONGS is true
     depends_on:
-      - redis
+      - valkey
     ports:
       - "8000:8000"
     restart: always
 
-  redis:
-    image: redis:latest
+  valkey:
+    image: valkey/valkey:9
     volumes:
-      - redis_data:/data
+      - valkey_data:/data
     restart: always
 
 volumes:
-  redis_data:
+  valkey_data:
 ```
+
+## Upgrading from Redis to Valkey
+
+The app stores its data in [Valkey](https://valkey.io) (a drop-in, Redis-compatible store). `REDIS_HOST`/`REDIS_PORT` are still accepted, so you can swap just the image in an existing compose file.
+
+Valkey can load data files written by Redis up to 7.2, but **not** newer Redis (e.g. `redis:latest` is 8.x). If your existing volume came from a newer Redis, Valkey will refuse to start on it. Back up the volume first, and if that happens either keep running Redis until after giving day or start with a fresh volume and re-create your games.
 
 ## Multiple games
 

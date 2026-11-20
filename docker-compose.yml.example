@@ -23,20 +23,20 @@ services:
       USE_SONGS: false # Set to true to play a song per person when the QR codes are activated
 
       URL: "http://localhost:8000" # This must be correct to generate QR codes
-      REDIS_HOST: redis
+      VALKEY_HOST: valkey
     volumes:
       - ./songs:/usr/src/app/static/songs # Only required if USE_SONGS is true
     depends_on:
-      - redis
+      - valkey
     ports:
       - "8000:8000"
     restart: always
 
-  redis:
-    image: redis:latest
+  valkey:
+    image: valkey/valkey:9
     volumes:
-      - redis_data:/data
+      - valkey_data:/data
     restart: always
 
 volumes:
-  redis_data:
+  valkey_data:

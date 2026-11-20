@@ -53,12 +53,13 @@ for group_spec in [g.strip() for g in os.getenv("NAME_GROUPS", "").split(";") if
 app = Flask(__name__)
 
 
-# Connect to Redis
+# Connect to Valkey (wire-compatible with Redis, so the redis client library is used).
+# REDIS_HOST / REDIS_PORT are still accepted for existing deployments.
 def connect_redis():
     try:
         return redis.StrictRedis(
-            host=os.getenv("REDIS_HOST", "redis"),
-            port=int(os.getenv("REDIS_PORT", 6379)),
+            host=os.getenv("VALKEY_HOST") or os.getenv("REDIS_HOST", "valkey"),
+            port=int(os.getenv("VALKEY_PORT") or os.getenv("REDIS_PORT", 6379)),
             db=0,
             decode_responses=True,
         )
