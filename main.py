@@ -238,8 +238,26 @@ def admin():
 
 @app.route("/rules/<firstname_base64>/<recipient_base64>")
 def rules(firstname_base64, recipient_base64):
-    firstname = bytes.fromhex(firstname_base64[::-1]).decode("utf-8")
-    recipient = bytes.fromhex(recipient_base64[::-1]).decode("utf-8")
+    # The recipient in the URL is only the one assigned at first draw; always
+    # show the current assignment from Redis so rerolls survive a page reload.
+    try:
+        firstname = bytes.fromhex(firstname_base64[::-1]).decode("utf-8").lower()
+    except ValueError:
+        abort(404)
+
+    try:
+        recipient = redis_client.get(f"recipient:{firstname}")
+    except redis.RedisError as e:
+        logging.error(f"Redis error: {e}")
+        return render_template(
+            "error.html", message="Internal server error. Please try again later."
+        )
+
+    if firstname not in config["names"] or not recipient:
+        return render_template(
+            "error.html",
+            message=f"No recipient found. Contact {config['admin_user']} for assistance.",
+        )
 
     return render_template(
         "rules.html",
