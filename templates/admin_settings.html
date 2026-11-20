@@ -1,0 +1,25 @@
+{% extends "base.html" %} {% block content %}
+<style>.content { max-width: 600px; }</style>
+<p class="text-left"><a href="{{ url_for('admin') }}">&larr; All games</a></p>
+<h2>Settings</h2>
+
+{% if errors %}
+<div class="alert alert-danger text-left" role="alert">
+  <ul class="mb-0 pl-3">{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+<form method="post" action="{{ url_for('admin_settings') }}" autocomplete="off">
+  {% include "_settings_fields.html" %}
+
+  {% if needs_password %}
+  <div class="form-group text-left">
+    <label for="password"><b>Change admin password</b></label>
+    <input id="password" name="password" type="password" class="form-control" minlength="8" placeholder="Leave blank to keep the current one" />
+    <input name="password2" type="password" class="form-control mt-2" minlength="8" placeholder="Repeat new password" aria-label="Repeat new password" />
+  </div>
+  {% endif %}
+
+  <button type="submit" class="btn btn-primary btn-lg btn-block">Save settings</button>
+</form>
+{% endblock %}

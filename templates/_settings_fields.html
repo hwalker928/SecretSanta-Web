@@ -1,0 +1,68 @@
+{% macro note(key) %}{% if key in locked %}<small class="form-text text-muted">Set by an environment variable, so it can't be changed here.</small>{% endif %}{% endmacro %}
+
+<div class="form-group text-left">
+  <label for="admin_user"><b>Your name</b></label>
+  <input id="admin_user" name="admin_user" class="form-control" value="{{ values.admin_user }}" maxlength="32" required {{ 'disabled' if 'admin_user' in locked }} />
+  <small class="form-text text-muted">Shown to people who get stuck: "Contact {{ values.admin_user }}".</small>
+  {{ note('admin_user') }}
+</div>
+
+<div class="form-group text-left">
+  <label for="url"><b>Public URL</b></label>
+  <input id="url" name="url" class="form-control" value="{{ values.url }}" required {{ 'disabled' if 'url' in locked }} />
+  <small class="form-text text-muted">The address people will open, used for private links and QR codes.</small>
+  {{ note('url') }}
+</div>
+
+<div class="form-group text-left">
+  <label for="budget"><b>Default budget</b></label>
+  <input id="budget" name="budget" class="form-control" value="{{ values.budget }}" maxlength="20" placeholder="e.g. £10" required {{ 'disabled' if 'budget' in locked }} />
+  <small class="form-text text-muted">Each game can override this later.</small>
+  {{ note('budget') }}
+</div>
+
+<div class="form-group text-left">
+  <label for="rules"><b>Rules</b></label>
+  <textarea id="rules" name="rules" class="form-control" rows="4" placeholder="One rule per line" {{ 'disabled' if 'rules' in locked }}>{{ values.rules }}</textarea>
+  {{ note('rules') }}
+</div>
+
+<div class="form-group text-left">
+  <label for="reroll_count"><b>Rerolls allowed</b></label>
+  <input id="reroll_count" name="reroll_count" type="number" min="0" max="10" class="form-control" value="{{ values.reroll_count }}" required {{ 'disabled' if 'reroll_count' in locked }} />
+  <small class="form-text text-muted">0 turns rerolling off.</small>
+  {{ note('reroll_count') }}
+</div>
+
+<div class="form-group text-left">
+  <label><b>Giving day</b></label>
+  <div class="form-row">
+    <div class="col">
+      <input name="giving_day" type="number" min="1" max="31" class="form-control" value="{{ values.giving_day }}" aria-label="Day" required {{ 'disabled' if 'giving_day' in locked }} />
+    </div>
+    <div class="col">
+      <select name="giving_month" class="form-control" aria-label="Month" {{ 'disabled' if 'giving_month' in locked }}>
+        {% for m in ['January','February','March','April','May','June','July','August','September','October','November','December'] %}
+        <option value="{{ loop.index }}" {{ 'selected' if values.giving_month|string == loop.index|string }}>{{ m }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+  <small class="form-text text-muted">QR codes only reveal recipients on this day.</small>
+  {{ note('giving_day') }}
+</div>
+
+<div class="form-group text-left">
+  <label for="qr_toggle_url"><b>QR activation path</b></label>
+  <input id="qr_toggle_url" name="qr_toggle_url" class="form-control" value="{{ values.qr_toggle_url }}" maxlength="40" required {{ 'disabled' if 'qr_toggle_url' in locked }} />
+  <small class="form-text text-muted">Visiting this path switches a game's QR codes on or off. Keep it hard to guess.</small>
+  {{ note('qr_toggle_url') }}
+</div>
+
+<div class="form-group text-left">
+  <div class="custom-control custom-checkbox">
+    <input id="use_songs" name="use_songs" type="checkbox" class="custom-control-input" {{ 'checked' if values.use_songs }} {{ 'disabled' if 'use_songs' in locked }} />
+    <label class="custom-control-label" for="use_songs">Play a song per person when QR codes are scanned</label>
+  </div>
+  {{ note('use_songs') }}
+</div>

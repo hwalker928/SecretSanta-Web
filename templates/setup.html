@@ -1,0 +1,47 @@
+{% extends "base.html" %} {% block content %}
+<style>.content { max-width: 600px; }</style>
+<img src="{{ url_for('static', filename='ss.svg') }}" alt="Secret Santa" />
+<h2>Welcome! Let's set things up</h2>
+<p class="text-muted">This only happens once. You can change everything later on the admin page.</p>
+
+{% if errors %}
+<div class="alert alert-danger text-left" role="alert">
+  <ul class="mb-0 pl-3">{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+<form method="post" action="{{ url_for('setup') }}" autocomplete="off">
+  <div class="form-group text-left">
+    <label for="code"><b>Setup code</b></label>
+    <input id="code" name="code" class="form-control" required autofocus />
+    <small class="form-text text-muted">Look in the server log (e.g. <code>docker compose logs web</code>) for "Setup code". This stops strangers from taking over a new server.</small>
+  </div>
+
+  {% if needs_password %}
+  <div class="form-group text-left">
+    <label for="password"><b>Admin password</b></label>
+    <input id="password" name="password" type="password" class="form-control" minlength="8" required />
+    <input name="password2" type="password" class="form-control mt-2" minlength="8" placeholder="Repeat password" aria-label="Repeat password" required />
+    <small class="form-text text-muted">At least 8 characters. Use it to sign in to the admin page (any username).</small>
+  </div>
+  {% endif %}
+
+  {% include "_settings_fields.html" %}
+
+  <div class="panel-box text-left">
+    <h3 class="text-center">Your first game</h3>
+    <div class="form-group">
+      <label for="game"><b>Game ID</b></label>
+      <input id="game" name="game" class="form-control" value="{{ game }}" placeholder="e.g. family" maxlength="32" required />
+      <small class="form-text text-muted">Lowercase letters, numbers and hyphens. You can add more games later.</small>
+    </div>
+    <div class="form-group mb-0">
+      <label for="people"><b>People</b></label>
+      <textarea id="people" name="people" class="form-control" rows="6" placeholder="One per line, optionally with a group:&#10;Alice, smiths&#10;Ben, smiths&#10;Charlie">{{ people }}</textarea>
+      <small class="form-text text-muted">People in the same group avoid drawing each other where possible. You can add or change people later.</small>
+    </div>
+  </div>
+
+  <button type="submit" class="btn btn-primary btn-lg btn-block">Finish setup</button>
+</form>
+{% endblock %}

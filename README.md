@@ -2,7 +2,8 @@
 
 ## Features
 
-- Random name allocation via a private link per person (shown on the admin page at `/ssadmin`, protected by `ADMIN_PASSWORD`)
+- Guided first-run setup in the browser
+- Random name allocation via a private link per person (shown on the admin page at `/ssadmin`, protected by your admin password)
 - Prevents being allocated yourself
 - Multiple independent games (e.g. `family`, `friends`) on one server, each with its own people, groups, budget and draw
 - Optional groups (e.g. families) who avoid drawing each other where possible
@@ -20,29 +21,12 @@ services:
   web:
     image: ghcr.io/hwalker928/secretsanta:latest
     environment:
-      ADMIN_USER: Harry
-      ADMIN_PASSWORD: change-me # Protects /ssadmin, which lists everyone's private links (admin page is disabled if unset)
-      # Initial people only: used the first time the app starts with an empty database.
-      # After that, add/remove people and set groups on /ssadmin.
-      VALID_NAMES: alice,ben,charlie,david
-      NAME_GROUPS: "family1:alice,ben;family2:charlie,david" # Optional: people in a group avoid drawing each other where possible
-
-      BUDGET: £10 # Default only; can be changed on /ssadmin
-
-      GIVING_DAY: 25
-      GIVING_MONTH: 12
-
-      REROLL_COUNT: 1 # Set to 0 to disable rerolls
-
-      RULES: Keep your recipient a secret,Multiple presents are allowed,Spend as close to the budget as possible
-
-      QR_TOGGLE_URL: qr-toggle # Set this to something random to prevent people from guessing the URL
-      USE_SONGS: false # Set to true to play a song per person when the QR codes are activated
-
-      URL: "http://localhost:8000" # This must be correct to generate QR codes
       VALKEY_HOST: valkey
+      # Everything else (admin password, URL, budget, rules, people, ...) is set up
+      # in your browser the first time you open the site. See the README for
+      # optional environment variables that override those settings.
     volumes:
-      - ./songs:/usr/src/app/static/songs # Only required if USE_SONGS is true
+      - ./songs:/app/static/songs # Only needed if you enable songs
     depends_on:
       - valkey
     ports:
@@ -58,6 +42,29 @@ services:
 volumes:
   valkey_data:
 ```
+
+## First-run setup
+
+The first time you open the site you are taken to a setup page (nothing is hard-coded). It asks for:
+
+- an admin password and your name
+- the public URL, default budget, rules, number of rerolls and giving day
+- a random QR activation path (suggested for you)
+- your first game and its people (optionally with groups)
+
+To stop a stranger finishing setup before you, it also asks for a one-time **setup code** printed in the server log:
+
+```
+docker compose logs web
+```
+
+Everything can be changed later under **Settings** on `/ssadmin`.
+
+### Environment variable overrides (optional)
+
+Setting one of these locks that option in the app, so use them only if you prefer config-as-code: `ADMIN_PASSWORD`, `ADMIN_USER`, `URL`, `BUDGET`, `RULES` (comma separated), `REROLL_COUNT`, `GIVING_DAY`, `GIVING_MONTH`, `QR_TOGGLE_URL`, `USE_SONGS`.
+
+Setting `VALID_NAMES` (and optionally `NAME_GROUPS`, `GAME_ID`) seeds a first game on an empty database and skips the setup page, which is how installs worked before setup existed. Existing installs skip setup automatically.
 
 ## Upgrading from Redis to Valkey
 
