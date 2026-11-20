@@ -82,8 +82,8 @@ def pick_recipient(giver, exclude=()):
     """Choose a recipient for `giver`, or None if no safe choice exists.
 
     Must be called while holding the assignment lock. If the giver already has
-    a recipient it is treated as released (reroll) and can be blocked via
-    `exclude`. A candidate is rejected if taking it would leave another
+    a recipient it is treated as released (reroll) and may be picked again;
+    `exclude` can block specific names. A candidate is rejected if taking it would leave another
     waiting giver with nobody but themselves to give to.
     """
     names = set(config["names"])
@@ -326,12 +326,12 @@ def reroll(firstname):
                     }
                 )
 
-            # Never re-pick the old recipient; nothing changes unless a new one is found
-            chosen_recipient = pick_recipient(firstname_lower, exclude={old_recipient})
+            # The old recipient is released and may be picked again
+            chosen_recipient = pick_recipient(firstname_lower)
             if not chosen_recipient:
                 return jsonify(
                     {
-                        "error": "No other recipients available. Contact admin for assistance."
+                        "error": "No available recipients left. Contact admin for assistance."
                     }
                 )
 
