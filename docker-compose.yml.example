@@ -6,6 +6,7 @@ services:
       ADMIN_PASSWORD: change-me # Protects /ssadmin, which lists everyone's private links (admin page is disabled if unset)
       # Initial people only: used the first time the app starts with an empty database.
       # After that, add/remove people and set groups on /ssadmin.
+      GAME_ID: default # ID of the first game created from VALID_NAMES (more games are added on /ssadmin)
       VALID_NAMES: alice,ben,charlie,david
       NAME_GROUPS: "family1:alice,ben;family2:charlie,david" # Optional: people in a group avoid drawing each other where possible
 

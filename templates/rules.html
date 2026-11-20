@@ -1,6 +1,6 @@
 {% extends "base.html" %} {% block content %}
 <img src="{{ url_for('static', filename='ss.svg') }}" alt="Secret Santa" />
-<h2>There is a maximum budget of <b>{{config["budget"]}}</b> to spend.</h2>
+<h2>There is a maximum budget of <b>{{budget}}</b> to spend.</h2>
 <h3>You have been selected...</h3>
 <h2>
   <b id="recipient" class="recipient-name" style="display: none"

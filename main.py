@@ -70,6 +70,12 @@ def connect_redis():
 redis_client = connect_redis()
 
 ASSIGN_LOCK = "assign-lock"
+GAME_ID_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,31}")
+
+
+def gk(game, *parts):
+    """Redis key for something belonging to a game, e.g. g:family:recipient:alice."""
+    return ":".join(("g", game) + parts)
 
 
 def get_int(key, default=0):
@@ -80,36 +86,63 @@ def get_int(key, default=0):
         return default
 
 
-def get_people():
-    """All participants as {lowercase name: lowercase group or ''}."""
-    return dict(redis_client.hgetall("people"))
+def clean_game_id(raw):
+    game = (raw or "").strip().lower()
+    return game if GAME_ID_RE.fullmatch(game) else None
 
 
-def ensure_person_state(name):
+DEFAULT_GAME = clean_game_id(os.getenv("GAME_ID", "default")) or "default"
+
+
+def require_game(game):
+    if not redis_client.sismember("games", game):
+        abort(404)
+    return game
+
+
+def only_game():
+    """The game's id if exactly one exists (keeps pre-multi-game URLs working)."""
+    games = redis_client.smembers("games")
+    return next(iter(games)) if len(games) == 1 else None
+
+
+def get_budget(game):
+    return redis_client.get(gk(game, "budget")) or config["budget"]
+
+
+def get_people(game):
+    """A game's participants as {lowercase name: lowercase group or ''}."""
+    return dict(redis_client.hgetall(gk(game, "people")))
+
+
+def ensure_person_state(game, name):
     """Create per-person state (recipient, reroll count, private link token)."""
-    redis_client.setnx(f"recipient:{name}", "")
-    redis_client.setnx(f"rerolls:{name}", 0)
-    redis_client.setnx(f"token:{name}", secrets.token_urlsafe(12))
-    redis_client.set(f"tokenowner:{redis_client.get(f'token:{name}')}", name)
+    redis_client.setnx(gk(game, "recipient", name), "")
+    redis_client.setnx(gk(game, "rerolls", name), 0)
+    redis_client.setnx(gk(game, "token", name), secrets.token_urlsafe(12))
+    token = redis_client.get(gk(game, "token", name))
+    redis_client.set(f"tokenowner:{token}", f"{game}|{name}")
 
 
-def pick_recipient(giver, exclude=()):
-    """Choose a recipient for `giver`, or None if no safe choice exists.
+def pick_recipient(game, giver, exclude=()):
+    """Choose a recipient for `giver` in `game`, or None if no safe choice exists.
 
     Must be called while holding the assignment lock. If the giver already has
     a recipient it is treated as released (reroll) and may be picked again;
-    `exclude` can block specific names. A candidate is rejected if taking it would leave another
-    waiting giver with nobody but themselves to give to.
+    `exclude` can block specific names. A candidate is rejected if taking it
+    would leave another waiting giver with nobody but themselves to give to.
     """
-    people = get_people()
+    people = get_people(game)
     names = set(people)
-    assigned = set(redis_client.smembers("assigned_recipients"))
-    current = redis_client.get(f"recipient:{giver}")
+    assigned = set(redis_client.smembers(gk(game, "assigned")))
+    current = redis_client.get(gk(game, "recipient", giver))
     if current:
         assigned.discard(current)
 
     pool = names - assigned - {giver} - set(exclude)
-    waiting = [n for n in names - {giver} if not redis_client.get(f"recipient:{n}")]
+    waiting = [
+        n for n in names - {giver} if not redis_client.get(gk(game, "recipient", n))
+    ]
 
     def leaves_someone_stuck(candidate):
         remaining = names - assigned - {candidate}
@@ -127,14 +160,35 @@ def pick_recipient(giver, exclude=()):
     return random.choice(candidates) if candidates else None
 
 
+def migrate_legacy_data():
+    """Move pre-multi-game data (un-namespaced keys) into a single game."""
+    game = DEFAULT_GAME
+    with redis_client.lock("migrate-lock", timeout=30, blocking_timeout=30):
+        if redis_client.exists("games") or not redis_client.exists("people"):
+            return
+
+        def move(old, new):
+            if redis_client.exists(old):
+                redis_client.rename(old, new)
+
+        people = dict(redis_client.hgetall("people"))
+        for name in people:
+            for part in ("recipient", "rerolls", "token"):
+                move(f"{part}:{name}", gk(game, part, name))
+            token = redis_client.get(gk(game, "token", name))
+            if token:
+                redis_client.set(f"tokenowner:{token}", f"{game}|{name}")
+        move("assigned_recipients", gk(game, "assigned"))
+        move("qr-active", gk(game, "qr-active"))
+        move("setting:budget", gk(game, "budget"))
+        move("people", gk(game, "people"))
+        redis_client.sadd("games", game)
+        logging.info(f"Migrated existing data into game '{game}'")
+
+
 @app.context_processor
 def inject_config():
-    # Budget can be changed on the admin page; fall back to the BUDGET env var
-    try:
-        budget = redis_client.get("setting:budget") or config["budget"]
-    except redis.RedisError:
-        budget = config["budget"]
-    return {"config": {**config, "budget": budget}}
+    return {"config": config}
 
 
 @app.route("/")
@@ -142,15 +196,19 @@ def main():
     return render_template("index.html")
 
 
-@app.route("/qrcodes")
-def qrcodes():
-    people = sorted(get_people())
+@app.route("/qrcodes", defaults={"game": None})
+@app.route("/qrcodes/<game>")
+def qrcodes(game):
+    game = require_game(game or only_game() or "")
+    people = sorted(get_people(game))
     people_dict = []
 
     for person in people:
         person_base64_reversed = person.encode("utf-8").hex()[::-1]
 
-        qr = qrcode.make(f"{config['url']}/qrscan/{person_base64_reversed}", border=1)
+        qr = qrcode.make(
+            f"{config['url']}/qrscan/{game}/{person_base64_reversed}", border=1
+        )
         buffer = io.BytesIO()
         qr.save(buffer, format="PNG")
         qr_img_bytes = base64.b64encode(buffer.getvalue()).decode()
@@ -165,23 +223,41 @@ def qrcodes():
 
     return render_template(
         "qrcodes.html",
+        game=game,
         people_dict=people_dict,
-        active=get_int("qr-active") == 1,
+        active=get_int(gk(game, "qr-active")) == 1,
     )
 
 
-@app.route(f"/{config['qr_toggle_url']}")
-def qr_toggle():
-    if get_int("qr-active") == 1:
-        redis_client.set("qr-active", 0)
-    else:
-        redis_client.set("qr-active", 1)
-    return redirect(f"/qrcodes")
+@app.route(f"/{config['qr_toggle_url']}", defaults={"game": None})
+@app.route(f"/{config['qr_toggle_url']}/<game>")
+def qr_toggle(game):
+    game = require_game(game or only_game() or "")
+    key = gk(game, "qr-active")
+    redis_client.set(key, 0 if get_int(key) == 1 else 1)
+    return redirect(url_for("qrcodes", game=game))
 
 
-@app.route("/qrscan/<person_base64>")
-def qrscan(person_base64):
-    if get_int("qr-active") == 0 and config["use_qr_checks"]:
+def render_qr_reveal(game, recipient):
+    names = [name.capitalize() for name in sorted(get_people(game))]
+    recipient = recipient.capitalize() if recipient else "Not assigned yet"
+
+    return render_template(
+        "qr.html",
+        recipient=recipient,
+        names=names,
+        song=config["use_songs"]
+        and recipient != "Not assigned yet"
+        and os.path.isfile(f"static/songs/{recipient.lower()}.mp3"),
+    )
+
+
+@app.route("/qrscan/<person_base64>", defaults={"game": None})
+@app.route("/qrscan/<game>/<person_base64>")
+def qrscan(game, person_base64):
+    game = require_game(game or only_game() or "")
+
+    if get_int(gk(game, "qr-active")) == 0 and config["use_qr_checks"]:
         return redirect("https://cdn.mtdv.me/video/last_rickmas.mp4")
 
     if (
@@ -190,47 +266,20 @@ def qrscan(person_base64):
     ) and config["use_qr_checks"]:
         return redirect("https://cdn.mtdv.me/video/feliz_navidad.mp4")
 
-    person = bytes.fromhex(person_base64[::-1]).decode("utf-8")
+    try:
+        person = bytes.fromhex(person_base64[::-1]).decode("utf-8")
+    except ValueError:
+        abort(404)
 
-    recipient = redis_client.get(f"recipient:{person.lower()}")
-
-    if recipient:
-        recipient = recipient.capitalize()
-    else:
-        recipient = "Not assigned yet"
-
-    names = [name.capitalize() for name in sorted(get_people())]
-
-    return render_template(
-        "qr.html",
-        recipient=recipient.capitalize(),
-        names=names,
-        song=config["use_songs"]
-        and recipient != "Not assigned yet"
-        and os.path.isfile(f"static/songs/{recipient.lower()}.mp3"),
-    )
+    return render_qr_reveal(game, redis_client.get(gk(game, "recipient", person.lower())))
 
 
-@app.route("/qrscan-test/<recipient>")
-def qrscantest(recipient):
+@app.route("/qrscan-test/<game>/<recipient>")
+def qrscantest(game, recipient):
     if config["use_qr_checks"]:
         abort(404)  # test route only available with DISABLE_QR_CHECKS=true
 
-    if recipient:
-        recipient = recipient.capitalize()
-    else:
-        recipient = "Not assigned yet"
-
-    names = [name.capitalize() for name in sorted(get_people())]
-
-    return render_template(
-        "qr.html",
-        recipient=recipient.capitalize(),
-        names=names,
-        song=config["use_songs"]
-        and recipient != "Not assigned yet"
-        and os.path.isfile(f"static/songs/{recipient.lower()}.mp3"),
-    )
+    return render_qr_reveal(require_game(game), recipient)
 
 
 def same_origin():
@@ -270,8 +319,8 @@ def require_admin(view):
     return wrapper
 
 
-def admin_redirect(message, ok=True):
-    return redirect(url_for("admin", msg=message, ok=1 if ok else 0))
+def admin_redirect(game, message, ok=True):
+    return redirect(url_for("admin_game", game=game, msg=message, ok=1 if ok else 0))
 
 
 def clean_name(raw):
@@ -286,17 +335,59 @@ def clean_group(raw):
 @app.route("/ssadmin")
 @require_admin
 def admin():
+    games = []
+    for game in sorted(redis_client.smembers("games")):
+        people = get_people(game)
+        games.append(
+            {
+                "id": game,
+                "people": len(people),
+                "drawn": sum(
+                    1 for n in people if redis_client.get(gk(game, "recipient", n))
+                ),
+            }
+        )
+
+    return render_template(
+        "admin_games.html",
+        games=games,
+        message=request.args.get("msg"),
+        message_ok=request.args.get("ok") == "1",
+    )
+
+
+@app.route("/ssadmin", methods=["POST"])
+@require_admin
+def admin_create_game():
+    game = clean_game_id(request.form.get("game"))
+    if not game:
+        return redirect(
+            url_for(
+                "admin",
+                msg="Game IDs are 1-32 characters: lowercase letters, numbers and hyphens (e.g. family).",
+                ok=0,
+            )
+        )
+    if not redis_client.sadd("games", game):
+        return redirect(url_for("admin", msg=f"'{game}' already exists.", ok=0))
+    return admin_redirect(game, f"Created game '{game}'. Add some people to get started.")
+
+
+@app.route("/ssadmin/<game>")
+@require_admin
+def admin_game(game):
+    require_game(game)
     people = []
 
     try:
-        for name, group in sorted(get_people().items()):
+        for name, group in sorted(get_people(game).items()):
             people.append(
                 {
                     "name": name,
                     "display": name.capitalize(),
                     "group": group,
-                    "assigned": bool(redis_client.get(f"recipient:{name}")),
-                    "link": f"{config['url'].rstrip('/')}/u/{redis_client.get(f'token:{name}')}",
+                    "assigned": bool(redis_client.get(gk(game, "recipient", name))),
+                    "link": f"{config['url'].rstrip('/')}/u/{redis_client.get(gk(game, 'token', name))}",
                 }
             )
     except redis.RedisError as e:
@@ -307,6 +398,8 @@ def admin():
 
     return render_template(
         "admin.html",
+        game=game,
+        budget=get_budget(game),
         people=people,
         groups=sorted({p["group"] for p in people if p["group"]}),
         count=sum(1 for p in people if not p["assigned"]),
@@ -316,118 +409,166 @@ def admin():
     )
 
 
-@app.route("/ssadmin/budget", methods=["POST"])
+@app.route("/ssadmin/<game>/delete", methods=["POST"])
 @require_admin
-def admin_set_budget():
-    budget = (request.form.get("budget") or "").strip()
-    if len(budget) > 20:
-        return admin_redirect("Budget must be 20 characters or fewer.", False)
-    if budget:
-        redis_client.set("setting:budget", budget)
-        return admin_redirect(f"Budget set to {budget}.")
-    redis_client.delete("setting:budget")  # blank = back to the BUDGET env default
-    return admin_redirect(f"Budget reset to the default ({config['budget']}).")
-
-
-@app.route("/ssadmin/people", methods=["POST"])
-@require_admin
-def admin_add_person():
-    name = clean_name(request.form.get("name"))
-    if not name:
+def admin_delete_game(game):
+    require_game(game)
+    if (request.form.get("confirm") or "").strip().lower() != game:
         return admin_redirect(
-            "Names must be 1-32 characters: letters, numbers, spaces, - or '.", False
+            game, "Type the game's ID to confirm deleting it.", False
         )
 
     with redis_client.lock(ASSIGN_LOCK, timeout=10, blocking_timeout=10):
-        if not redis_client.hsetnx("people", name, clean_group(request.form.get("group"))):
-            return admin_redirect(f"{name.capitalize()} is already in the list.", False)
-        ensure_person_state(name)
+        for name in get_people(game):
+            token = redis_client.get(gk(game, "token", name))
+            redis_client.delete(
+                gk(game, "recipient", name),
+                gk(game, "rerolls", name),
+                gk(game, "token", name),
+            )
+            if token:
+                redis_client.delete(f"tokenowner:{token}")
+        redis_client.delete(
+            gk(game, "people"),
+            gk(game, "assigned"),
+            gk(game, "qr-active"),
+            gk(game, "budget"),
+        )
+        redis_client.srem("games", game)
+    return redirect(url_for("admin", msg=f"Deleted game '{game}'.", ok=1))
 
-    message = f"Added {name.capitalize()}."
-    if redis_client.scard("assigned_recipients"):
-        message += " Draws have already started, so they may not be picked by anyone; reset the draws if that's a problem."
-    return admin_redirect(message)
 
-
-@app.route("/ssadmin/people/<name>/group", methods=["POST"])
+@app.route("/ssadmin/<game>/budget", methods=["POST"])
 @require_admin
-def admin_set_group(name):
-    if not redis_client.hexists("people", name):
-        abort(404)
-    redis_client.hset("people", name, clean_group(request.form.get("group")))
-    return admin_redirect(f"Updated {name.capitalize()}'s group.")
+def admin_set_budget(game):
+    require_game(game)
+    budget = (request.form.get("budget") or "").strip()
+    if len(budget) > 20:
+        return admin_redirect(game, "Budget must be 20 characters or fewer.", False)
+    if budget:
+        redis_client.set(gk(game, "budget"), budget)
+        return admin_redirect(game, f"Budget set to {budget}.")
+    redis_client.delete(gk(game, "budget"))  # blank = back to the BUDGET env default
+    return admin_redirect(game, f"Budget reset to the default ({config['budget']}).")
 
 
-@app.route("/ssadmin/people/<name>/remove", methods=["POST"])
+@app.route("/ssadmin/<game>/people", methods=["POST"])
 @require_admin
-def admin_remove_person(name):
+def admin_add_person(game):
+    require_game(game)
+    name = clean_name(request.form.get("name"))
+    if not name:
+        return admin_redirect(
+            game,
+            "Names must be 1-32 characters: letters, numbers, spaces, - or '.",
+            False,
+        )
+
     with redis_client.lock(ASSIGN_LOCK, timeout=10, blocking_timeout=10):
-        if not redis_client.hexists("people", name):
-            abort(404)
-        if redis_client.get(f"recipient:{name}") or name in redis_client.smembers(
-            "assigned_recipients"
+        if not redis_client.hsetnx(
+            gk(game, "people"), name, clean_group(request.form.get("group"))
         ):
             return admin_redirect(
+                game, f"{name.capitalize()} is already in the list.", False
+            )
+        ensure_person_state(game, name)
+
+    message = f"Added {name.capitalize()}."
+    if redis_client.scard(gk(game, "assigned")):
+        message += " Draws have already started, so they may not be picked by anyone; reset the draws if that's a problem."
+    return admin_redirect(game, message)
+
+
+@app.route("/ssadmin/<game>/people/<name>/group", methods=["POST"])
+@require_admin
+def admin_set_group(game, name):
+    require_game(game)
+    if not redis_client.hexists(gk(game, "people"), name):
+        abort(404)
+    redis_client.hset(gk(game, "people"), name, clean_group(request.form.get("group")))
+    return admin_redirect(game, f"Updated {name.capitalize()}'s group.")
+
+
+@app.route("/ssadmin/<game>/people/<name>/remove", methods=["POST"])
+@require_admin
+def admin_remove_person(game, name):
+    require_game(game)
+    with redis_client.lock(ASSIGN_LOCK, timeout=10, blocking_timeout=10):
+        if not redis_client.hexists(gk(game, "people"), name):
+            abort(404)
+        if redis_client.get(gk(game, "recipient", name)) or name in redis_client.smembers(
+            gk(game, "assigned")
+        ):
+            return admin_redirect(
+                game,
                 f"{name.capitalize()} has already drawn or been drawn by someone. Reset the draws before removing them.",
                 False,
             )
-        token = redis_client.get(f"token:{name}")
-        redis_client.hdel("people", name)
-        redis_client.delete(f"recipient:{name}", f"rerolls:{name}", f"token:{name}")
+        token = redis_client.get(gk(game, "token", name))
+        redis_client.hdel(gk(game, "people"), name)
+        redis_client.delete(
+            gk(game, "recipient", name),
+            gk(game, "rerolls", name),
+            gk(game, "token", name),
+        )
         if token:
             redis_client.delete(f"tokenowner:{token}")
-    return admin_redirect(f"Removed {name.capitalize()}.")
+    return admin_redirect(game, f"Removed {name.capitalize()}.")
 
 
-@app.route("/ssadmin/reset", methods=["POST"])
+@app.route("/ssadmin/<game>/reset", methods=["POST"])
 @require_admin
-def admin_reset_draws():
+def admin_reset_draws(game):
     """Clear every draw and reroll count. People, groups and links are kept."""
+    require_game(game)
     with redis_client.lock(ASSIGN_LOCK, timeout=10, blocking_timeout=10):
-        redis_client.delete("assigned_recipients")
-        for name in get_people():
-            redis_client.set(f"recipient:{name}", "")
-            redis_client.set(f"rerolls:{name}", 0)
-    return admin_redirect("All draws have been reset.")
+        redis_client.delete(gk(game, "assigned"))
+        for name in get_people(game):
+            redis_client.set(gk(game, "recipient", name), "")
+            redis_client.set(gk(game, "rerolls", name), 0)
+    return admin_redirect(game, "All draws have been reset.")
 
 
 def person_for_token(token):
-    """Return the (lowercase) name that owns this private link, or abort(404)."""
-    name = redis_client.get(f"tokenowner:{token}")
-    if not name or name not in get_people():
+    """Return (game, lowercase name) that owns this private link, or abort(404)."""
+    owner = redis_client.get(f"tokenowner:{token}") or ""
+    game, _, name = owner.partition("|")
+    if not game or not redis_client.hexists(gk(game, "people"), name):
         abort(404)
-    return name
+    return game, name
 
 
 @app.route("/u/<token>")
 def welcome(token):
     """Landing page for a private link. GET never assigns anything, so link
     previews/scrapers (WhatsApp etc.) can't trigger a draw."""
-    name = person_for_token(token)
+    game, name = person_for_token(token)
     return render_template(
         "welcome.html",
         token=token,
+        game=game,
+        budget=get_budget(game),
         person=name.capitalize(),
-        already_drawn=bool(redis_client.get(f"recipient:{name}")),
+        already_drawn=bool(redis_client.get(gk(game, "recipient", name))),
     )
 
 
 @app.route("/u/<token>/draw", methods=["POST"])
 def draw(token):
-    name = person_for_token(token)
+    game, name = person_for_token(token)
 
     try:
         with redis_client.lock(ASSIGN_LOCK, timeout=10, blocking_timeout=10):
             # Idempotent: if already drawn just show the existing recipient
-            if not redis_client.get(f"recipient:{name}"):
-                chosen_recipient = pick_recipient(name)
+            if not redis_client.get(gk(game, "recipient", name)):
+                chosen_recipient = pick_recipient(game, name)
                 if not chosen_recipient:
                     return render_template(
                         "error.html",
                         message="No available recipients left. Contact admin for assistance.",
                     )
-                redis_client.set(f"recipient:{name}", chosen_recipient)
-                redis_client.sadd("assigned_recipients", chosen_recipient)
+                redis_client.set(gk(game, "recipient", name), chosen_recipient)
+                redis_client.sadd(gk(game, "assigned"), chosen_recipient)
     except redis.RedisError as e:
         logging.error(f"Redis error: {e}")
         return render_template(
@@ -439,11 +580,11 @@ def draw(token):
 
 @app.route("/u/<token>/rules")
 def rules(token):
-    name = person_for_token(token)
+    game, name = person_for_token(token)
 
     try:
-        recipient = redis_client.get(f"recipient:{name}")
-        rerolls_used = get_int(f"rerolls:{name}")
+        recipient = redis_client.get(gk(game, "recipient", name))
+        rerolls_used = get_int(gk(game, "rerolls", name))
     except redis.RedisError as e:
         logging.error(f"Redis error: {e}")
         return render_template(
@@ -457,6 +598,7 @@ def rules(token):
         "rules.html",
         chosen_recipient_capital=recipient.capitalize(),
         token=token,
+        budget=get_budget(game),
         reroll_limit=config["reroll_count"],
         rerolls_left=max(0, config["reroll_count"] - rerolls_used),
     )
@@ -464,21 +606,21 @@ def rules(token):
 
 @app.route("/u/<token>/reroll", methods=["POST"])
 def reroll(token):
-    name = person_for_token(token)
+    game, name = person_for_token(token)
 
     if config["reroll_count"] == 0:
         return jsonify({"error": "Rerolls are disabled."})
 
     try:
         with redis_client.lock(ASSIGN_LOCK, timeout=10, blocking_timeout=10):
-            if get_int(f"rerolls:{name}") >= config["reroll_count"]:
+            if get_int(gk(game, "rerolls", name)) >= config["reroll_count"]:
                 return jsonify(
                     {
                         "error": f"You have reached the maximum number of rerolls ({config['reroll_count']})."
                     }
                 )
 
-            old_recipient = redis_client.get(f"recipient:{name}")
+            old_recipient = redis_client.get(gk(game, "recipient", name))
             if not old_recipient:
                 return jsonify(
                     {
@@ -487,7 +629,7 @@ def reroll(token):
                 )
 
             # The old recipient is released and may be picked again
-            chosen_recipient = pick_recipient(name)
+            chosen_recipient = pick_recipient(game, name)
             if not chosen_recipient:
                 return jsonify(
                     {
@@ -495,10 +637,10 @@ def reroll(token):
                     }
                 )
 
-            redis_client.srem("assigned_recipients", old_recipient)
-            redis_client.set(f"recipient:{name}", chosen_recipient)
-            redis_client.sadd("assigned_recipients", chosen_recipient)
-            redis_client.incr(f"rerolls:{name}")
+            redis_client.srem(gk(game, "assigned"), old_recipient)
+            redis_client.set(gk(game, "recipient", name), chosen_recipient)
+            redis_client.sadd(gk(game, "assigned"), chosen_recipient)
+            redis_client.incr(gk(game, "rerolls", name))
 
         return jsonify({"newName": chosen_recipient.capitalize()})
 
@@ -509,14 +651,18 @@ def reroll(token):
 
 # Initialise state without clobbering anything already stored (safe across
 # restarts and across multiple gunicorn workers booting at once).
-if not redis_client.exists("people"):
+migrate_legacy_data()
+if not redis_client.exists("games") and seed_people:
+    # Fresh install: VALID_NAMES / NAME_GROUPS seed a first game
+    redis_client.sadd("games", DEFAULT_GAME)
     for _name, _group in seed_people.items():
-        redis_client.hsetnx("people", _name, _group)
-for _name in get_people():
-    ensure_person_state(_name)
-redis_client.setnx("qr-active", 0)
+        redis_client.hsetnx(gk(DEFAULT_GAME, "people"), _name, _group)
+for _game in redis_client.smembers("games"):
+    for _name in get_people(_game):
+        ensure_person_state(_game, _name)
+    redis_client.setnx(gk(_game, "qr-active"), 0)
 
-print(f"Loaded {len(get_people())} names.")
+print(f"Loaded games: {sorted(redis_client.smembers('games'))}")
 print(f"Loaded songs: {os.listdir('static/songs') if os.path.isdir('static/songs') else []}")
 
 

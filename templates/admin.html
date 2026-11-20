@@ -4,16 +4,17 @@
   .content table { text-align: left; }
   .link-input { min-width: 220px; }
 </style>
-<h2>Admin</h2>
+<p class="text-left"><a href="{{ url_for('admin') }}">&larr; All games</a></p>
+<h2>{{ game }}</h2>
 
 {% if message %}
 <div class="alert {{ 'alert-success' if message_ok else 'alert-danger' }}" role="alert">{{ message }}</div>
 {% endif %}
 
 <div class="panel-box" style="margin-top: 0; margin-bottom: 20px">
-  <form method="post" action="{{ url_for('admin_set_budget') }}" class="form-inline justify-content-center">
+  <form method="post" action="{{ url_for('admin_set_budget', game=game) }}" class="form-inline justify-content-center">
     <label for="budget" class="mr-2"><b>Budget</b></label>
-    <input id="budget" name="budget" value="{{ config['budget'] }}" class="form-control mr-2" maxlength="20" style="width: 120px" />
+    <input id="budget" name="budget" value="{{ budget }}" class="form-control mr-2" maxlength="20" style="width: 120px" />
     <button class="btn btn-primary" style="margin-top: 0">Save</button>
   </form>
   <p class="text-muted small" style="margin: 10px 0 0">
@@ -35,7 +36,7 @@
       <tr>
         <td class="align-middle">{{ p.display }}</td>
         <td class="align-middle">
-          <form method="post" action="{{ url_for('admin_set_group', name=p.name) }}" class="form-inline">
+          <form method="post" action="{{ url_for('admin_set_group', game=game, name=p.name) }}" class="form-inline">
             <input name="group" value="{{ p.group }}" list="groups" placeholder="none" maxlength="32" class="form-control form-control-sm" style="width: 110px" />
             <button class="btn btn-outline-primary btn-sm" style="margin-top: 0">Save</button>
           </form>
@@ -50,7 +51,7 @@
           </div>
         </td>
         <td class="align-middle">
-          <form method="post" action="{{ url_for('admin_remove_person', name=p.name) }}" onsubmit="return confirm('Remove {{ p.display }}?')">
+          <form method="post" action="{{ url_for('admin_remove_person', game=game, name=p.name) }}" onsubmit="return confirm('Remove {{ p.display }}?')">
             <button class="btn btn-outline-danger btn-sm" style="margin-top: 0">Remove</button>
           </form>
         </td>
@@ -68,7 +69,7 @@
 
 <div class="panel-box">
   <h3>Add a person</h3>
-  <form method="post" action="{{ url_for('admin_add_person') }}" class="form-inline justify-content-center">
+  <form method="post" action="{{ url_for('admin_add_person', game=game) }}" class="form-inline justify-content-center">
     <input name="name" class="form-control mr-2" placeholder="First name" maxlength="32" required />
     <input name="group" class="form-control mr-2" placeholder="Group (optional)" list="groups" maxlength="32" />
     <button class="btn btn-primary" style="margin-top: 0">Add</button>
@@ -82,11 +83,28 @@
 <div class="panel-box">
   <h3>Reset draws</h3>
   <p class="small">Clears every draw and reroll. People, groups and links stay the same.</p>
-  <form method="post" action="{{ url_for('admin_reset_draws') }}" onsubmit="return confirm('Clear ALL draws? Everyone will need to draw again.')">
+  <form method="post" action="{{ url_for('admin_reset_draws', game=game) }}" onsubmit="return confirm('Clear ALL draws? Everyone will need to draw again.')">
     <button class="btn btn-outline-danger" style="margin-top: 0">Reset all draws</button>
   </form>
 </div>
 {% endif %}
+
+<div class="panel-box">
+  <h3>QR codes</h3>
+  <p class="small">
+    <a href="/qrcodes/{{ game }}">Printable QR codes</a> &middot;
+    <a href="/{{ config['qr_toggle_url'] }}/{{ game }}">Toggle activation</a>
+  </p>
+</div>
+
+<div class="panel-box">
+  <h3>Delete game</h3>
+  <p class="small">Permanently deletes this game, its people, draws and links.</p>
+  <form method="post" action="{{ url_for('admin_delete_game', game=game) }}" class="form-inline justify-content-center" onsubmit="return confirm('Delete {{ game }} permanently?')">
+    <input name="confirm" class="form-control mr-2" placeholder="Type '{{ game }}' to confirm" required />
+    <button class="btn btn-outline-danger" style="margin-top: 0">Delete</button>
+  </form>
+</div>
 
 <script>
   function copyLink(btn) {

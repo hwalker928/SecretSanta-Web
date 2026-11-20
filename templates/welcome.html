@@ -1,12 +1,13 @@
 {% extends "base.html" %} {% block content %}
 <img src="{{ url_for('static', filename='ss.svg') }}" alt="Secret Santa" />
 <h2>Hello {{ person }}!</h2>
+<p class="text-muted">Secret Santa: {{ game }}</p>
 {% if already_drawn %}
 <p>Welcome back. Tap below to see who you are buying for.</p>
 {% else %}
 <p>
   Ready to find out who you are buying for? The budget is
-  <b>{{ config["budget"] }}</b>.
+  <b>{{ budget }}</b>.
 </p>
 {% endif %}
 <form method="post" action="/u/{{ token }}/draw">

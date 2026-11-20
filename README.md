@@ -4,6 +4,7 @@
 
 - Random name allocation via a private link per person (shown on the admin page at `/ssadmin`, protected by `ADMIN_PASSWORD`)
 - Prevents being allocated yourself
+- Multiple independent games (e.g. `family`, `friends`) on one server, each with its own people, groups, budget and draw
 - Optional groups (e.g. families) who avoid drawing each other where possible
 - Admin page to add/remove people, edit groups, copy private links and reset draws
 - Reroll functionality
@@ -58,11 +59,17 @@ volumes:
   redis_data:
 ```
 
+## Multiple games
+
+Create and manage games on `/ssadmin` (e.g. `family`, `friends`). Each game has its own people, groups, budget, draws and QR codes. Everyone still just uses their personal link, which already belongs to one game.
+
+`VALID_NAMES`/`NAME_GROUPS` only seed a first game on a brand-new install, named by `GAME_ID` (default `default`). Existing installs are migrated automatically into a single game with that ID, and existing links and QR stickers keep working while only one game exists. Once you add a second game, QR codes are per-game: `/qrcodes/<game>` and `/<QR_TOGGLE_URL>/<game>`.
+
 ## QR Code Stickers
 
 A QR code is automatically generated per-person, which when scanned on the day that presents are given (configurable in the docker-compose.yml), will reveal who the present is for.
 
-You can view all of the QR codes here: http://localhost:8000/qrcodes
+You can view all of the QR codes here: http://localhost:8000/qrcodes/<game>
 
 The QR codes will not be active until both of the following conditions are true:
 
