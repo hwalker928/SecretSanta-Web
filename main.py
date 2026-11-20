@@ -1,4 +1,4 @@
-from flask import Flask, render_template, redirect, jsonify
+from flask import Flask, render_template, redirect, jsonify, abort
 import redis
 import random
 import logging
@@ -18,7 +18,9 @@ config = {
     "port": int(os.getenv("APP_PORT", 8000)),
     "reroll_count": int(os.getenv("REROLL_COUNT", 0)),
     "admin_user": os.getenv("ADMIN_USER", "admin"),
-    "names": os.getenv("VALID_NAMES", "").split(","),
+    "names": [
+        n.strip().lower() for n in os.getenv("VALID_NAMES", "").split(",") if n.strip()
+    ],
     "year": os.getenv("YEAR", datetime.datetime.now().year),
     "budget": os.getenv("BUDGET", "10"),
     "url": os.getenv("URL", "http://localhost:8000"),
@@ -65,6 +67,50 @@ def connect_redis():
 
 redis_client = connect_redis()
 
+ASSIGN_LOCK = "assign-lock"
+
+
+def get_int(key, default=0):
+    """Read an integer from Redis, tolerating missing/invalid values."""
+    try:
+        return int(redis_client.get(key))
+    except (TypeError, ValueError):
+        return default
+
+
+def pick_recipient(giver, exclude=()):
+    """Choose a recipient for `giver`, or None if no safe choice exists.
+
+    Must be called while holding the assignment lock. If the giver already has
+    a recipient it is treated as released (reroll) and can be blocked via
+    `exclude`. A candidate is rejected if taking it would leave another
+    waiting giver with nobody but themselves to give to.
+    """
+    names = set(config["names"])
+    assigned = set(redis_client.smembers("assigned_recipients"))
+    current = redis_client.get(f"recipient:{giver}")
+    if current:
+        assigned.discard(current)
+
+    pool = names - assigned - {giver} - set(exclude)
+    waiting = [n for n in names - {giver} if not redis_client.get(f"recipient:{n}")]
+
+    def leaves_someone_stuck(candidate):
+        remaining = names - assigned - {candidate}
+        return any(remaining <= {w} for w in waiting)
+
+    candidates = [c for c in pool if not leaves_someone_stuck(c)]
+
+    # Prefer recipients from a different group where possible
+    groups = config["name_groups"]
+    giver_group = groups.get(giver)
+    if giver_group:
+        different = [c for c in candidates if groups.get(c) != giver_group]
+        if different:
+            candidates = different
+
+    return random.choice(candidates) if candidates else None
+
 
 @app.route("/")
 def main():
@@ -96,13 +142,13 @@ def qrcodes():
         "qrcodes.html",
         people_dict=people_dict,
         config=config,
-        active=int(redis_client.get("qr-active")) == 1,
+        active=get_int("qr-active") == 1,
     )
 
 
 @app.route(f"/{config['qr_toggle_url']}")
 def qr_toggle():
-    if int(redis_client.get("qr-active")) == 1:
+    if get_int("qr-active") == 1:
         redis_client.set("qr-active", 0)
     else:
         redis_client.set("qr-active", 1)
@@ -111,7 +157,7 @@ def qr_toggle():
 
 @app.route("/qrscan/<person_base64>")
 def qrscan(person_base64):
-    if int(redis_client.get("qr-active")) == 0 and config["use_qr_checks"]:
+    if get_int("qr-active") == 0 and config["use_qr_checks"]:
         return redirect("https://cdn.mtdv.me/video/last_rickmas.mp4")
 
     if (
@@ -144,6 +190,9 @@ def qrscan(person_base64):
 
 @app.route("/qrscan-test/<recipient>")
 def qrscantest(recipient):
+    if config["use_qr_checks"]:
+        abort(404)  # test route only available with DISABLE_QR_CHECKS=true
+
     if recipient:
         recipient = recipient.capitalize()
     else:
@@ -203,7 +252,7 @@ def rules(firstname_base64, recipient_base64):
 
 @app.route("/name/<firstname>")
 def name(firstname: str):
-    firstname_lower = firstname.lower()
+    firstname_lower = firstname.strip().lower()
     if firstname_lower not in config["names"]:
         return render_template(
             "error.html",
@@ -214,42 +263,23 @@ def name(firstname: str):
         )
 
     try:
-        # Check if the user has already been assigned a recipient
-        recipient = redis_client.get(f"recipient:{firstname_lower}")
-        if recipient:
-            return render_template(
-                "error.html",
-                message=f"You have already been assigned a recipient. Contact {config['admin_user']} for assistance.",
-            )
+        with redis_client.lock(ASSIGN_LOCK, timeout=10, blocking_timeout=10):
+            # Check if the user has already been assigned a recipient
+            if redis_client.get(f"recipient:{firstname_lower}"):
+                return render_template(
+                    "error.html",
+                    message=f"You have already been assigned a recipient. Contact {config['admin_user']} for assistance.",
+                )
 
-        # Get available recipients
-        all_names = set(config["names"])
-        assigned_recipients = set(redis_client.smembers("assigned_recipients"))
-        possible_recipients = list(all_names - assigned_recipients - {firstname_lower})
+            chosen_recipient = pick_recipient(firstname_lower)
+            if not chosen_recipient:
+                return render_template(
+                    "error.html",
+                    message="No available recipients left. Contact admin for assistance.",
+                )
 
-        # Prefer recipients from different groups. NAME_GROUPS env format:
-        # "group1:alice,bob;group2:carol,dave"
-        first_group = config.get("name_groups", {}).get(firstname_lower)
-        if first_group:
-            different_group = [n for n in possible_recipients if config.get("name_groups", {}).get(n) != first_group]
-            if different_group:
-                available_recipients = different_group
-            else:
-                available_recipients = possible_recipients
-        else:
-            available_recipients = possible_recipients
-
-        if not available_recipients:
-            return render_template(
-                "error.html",
-                message="No available recipients left. Contact admin for assistance.",
-            )
-
-        chosen_recipient = random.choice(available_recipients)
-
-        # Assign the recipient
-        redis_client.set(f"recipient:{firstname_lower}", chosen_recipient)
-        redis_client.sadd("assigned_recipients", chosen_recipient)
+            redis_client.set(f"recipient:{firstname_lower}", chosen_recipient)
+            redis_client.sadd("assigned_recipients", chosen_recipient)
 
         firstname_lower_base64 = firstname_lower.encode("utf-8").hex()[::-1]
         chosen_recipient_base64 = chosen_recipient.encode("utf-8").hex()[::-1]
@@ -268,7 +298,7 @@ def reroll(firstname):
     if config["reroll_count"] == 0:
         return jsonify({"error": "Rerolls are disabled."})
 
-    firstname_lower = firstname.lower()
+    firstname_lower = firstname.strip().lower()
     if firstname_lower not in config["names"]:
         return jsonify(
             {
@@ -279,74 +309,53 @@ def reroll(firstname):
             }
         )
 
-    if int(redis_client.get(f"rerolls:{firstname_lower}")) >= config["reroll_count"]:
-        return jsonify(
-            {
-                "error": f"You have reached the maximum number of rerolls ({config['reroll_count']})."
-            }
-        )
-
     try:
-        # Remove the current assignment
-        old_recipient = redis_client.get(f"recipient:{firstname_lower}")
-        if old_recipient:
+        with redis_client.lock(ASSIGN_LOCK, timeout=10, blocking_timeout=10):
+            if get_int(f"rerolls:{firstname_lower}") >= config["reroll_count"]:
+                return jsonify(
+                    {
+                        "error": f"You have reached the maximum number of rerolls ({config['reroll_count']})."
+                    }
+                )
+
+            old_recipient = redis_client.get(f"recipient:{firstname_lower}")
+            if not old_recipient:
+                return jsonify(
+                    {
+                        "error": "You have not been assigned a recipient yet. Contact admin for assistance."
+                    }
+                )
+
+            # Never re-pick the old recipient; nothing changes unless a new one is found
+            chosen_recipient = pick_recipient(firstname_lower, exclude={old_recipient})
+            if not chosen_recipient:
+                return jsonify(
+                    {
+                        "error": "No other recipients available. Contact admin for assistance."
+                    }
+                )
+
             redis_client.srem("assigned_recipients", old_recipient)
-        else:
-            return jsonify(
-                {
-                    "error": "You have not been assigned a recipient yet. Contact admin for assistance."
-                }
-            )
-
-        # Get new available recipients
-        all_names = set(config["names"])
-        assigned_recipients = set(redis_client.smembers("assigned_recipients"))
-        possible_recipients = list(all_names - assigned_recipients - {firstname_lower})
-
-        # Prefer recipients from different groups where possible
-        first_group = config.get("name_groups", {}).get(firstname_lower)
-        if first_group:
-            different_group = [n for n in possible_recipients if config.get("name_groups", {}).get(n) != first_group]
-            if different_group:
-                available_recipients = different_group
-            else:
-                available_recipients = possible_recipients
-        else:
-            available_recipients = possible_recipients
-        
-        print("Available recipients for reroll:", available_recipients)
-
-        if not available_recipients:
-            return jsonify(
-                {"error": "No available recipients left. Contact admin for assistance."}
-            )
-
-        chosen_recipient = random.choice(available_recipients)
-
-        # Assign the new recipient
-        redis_client.set(f"recipient:{firstname_lower}", chosen_recipient)
-        redis_client.sadd("assigned_recipients", chosen_recipient)
-        redis_client.incr(f"rerolls:{firstname_lower}")
+            redis_client.set(f"recipient:{firstname_lower}", chosen_recipient)
+            redis_client.sadd("assigned_recipients", chosen_recipient)
+            redis_client.incr(f"rerolls:{firstname_lower}")
 
         return jsonify({"newName": chosen_recipient.capitalize()})
 
     except redis.RedisError as e:
         logging.error(f"Redis error: {e}")
-        return render_template(
-            "error.html", message="Internal server error. Please try again later."
-        )
+        return jsonify({"error": "Internal server error. Please try again later."})
 
-# Initialize the recipient assignments in Redis if not already done
-if not redis_client.exists("assigned_recipients"):
-    redis_client.delete("assigned_recipients")
-    for name in config["names"]:
-        redis_client.set(f"recipient:{name.lower()}", "")
-        redis_client.set(f"rerolls:{name.lower()}", 0)
 
-redis_client.set("qr-active", 0)
+# Initialise state without clobbering anything already stored (safe across
+# restarts and across multiple gunicorn workers booting at once).
+for _name in config["names"]:
+    redis_client.setnx(f"recipient:{_name}", "")
+    redis_client.setnx(f"rerolls:{_name}", 0)
+redis_client.setnx("qr-active", 0)
 
 print(f"Loaded {len(config['names'])} names.")
-print(f"Loaded songs: {os.listdir('static/songs')}")
+print(f"Loaded songs: {os.listdir('static/songs') if os.path.isdir('static/songs') else []}")
 
 
 if __name__ == "__main__":
