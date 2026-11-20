@@ -1,35 +1,31 @@
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <title>Secret Santa</title>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link
-      rel="stylesheet"
-      href="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css"
-    />
-    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
-    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/js/bootstrap.min.js"></script>
-    <script src="https://unpkg.com/sweetalert/dist/sweetalert.min.js"></script>
-
-    <script>
-      function askName() {
-        swal({
-          text: "Please enter your firstname",
-          content: "input",
-          icon: "info",
-          closeOnClickOutside: false,
-          closeOnEsc: false,
-          button: {
-            text: "Continue",
-            closeModal: true,
-          },
-        }).then((name) => {
-          if (!name || name.length > 16) throw null;
-          window.location.href = "/name/" + name;
-        });
-      }
-    </script>
-  </head>
-  <body onload="askName()"></body>
-</html>
+{% extends "base.html" %} {% block content %}
+<img src="{{ url_for('static', filename='ss.svg') }}" alt="Secret Santa" />
+<h2>Secret Santa {{ config["year"] }}</h2>
+<p>
+  Enter your first name to find out who you are buying for. The budget is
+  <b>{{ config["budget"] }}</b>.
+</p>
+<form id="nameForm" autocomplete="off">
+  <input
+    id="nameInput"
+    class="form-control form-control-lg text-center"
+    type="text"
+    placeholder="Your first name"
+    maxlength="16"
+    autocapitalize="words"
+    autofocus
+    required
+  />
+  <button type="submit" class="btn btn-primary btn-lg btn-block">
+    Continue
+  </button>
+</form>
+<script>
+  document.getElementById("nameForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const name = document.getElementById("nameInput").value.trim();
+    if (!name) return;
+    window.location.href = "/name/" + encodeURIComponent(name);
+  });
+</script>
+{% endblock %}

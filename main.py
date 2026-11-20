@@ -112,6 +112,11 @@ def pick_recipient(giver, exclude=()):
     return random.choice(candidates) if candidates else None
 
 
+@app.context_processor
+def inject_config():
+    return {"config": config}
+
+
 @app.route("/")
 def main():
     return render_template("index.html")
@@ -265,6 +270,7 @@ def rules(firstname_base64, recipient_base64):
         config=config,
         firstname=firstname,
         reroll_limit=config["reroll_count"],
+        rerolls_left=max(0, config["reroll_count"] - get_int(f"rerolls:{firstname}")),
     )
 
 

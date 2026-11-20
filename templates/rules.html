@@ -3,7 +3,9 @@
 <h2>There is a maximum budget of <b>{{config["budget"]}}</b> to spend.</h2>
 <h3>You have been selected...</h3>
 <h2>
-  <b id="recipient" style="display: none">{{chosen_recipient_capital}}</b>
+  <b id="recipient" class="recipient-name" style="display: none"
+    >{{chosen_recipient_capital}}</b
+  >
 </h2>
 <button
   id="revealBtn"
@@ -13,17 +15,10 @@
   TAP TO REVEAL
 </button>
 
-{% if reroll_limit != 0 %}
+{% if reroll_limit != 0 and rerolls_left > 0 %}
 <div
   id="rerollSection"
-  class="fade-in hidden"
-  style="
-    border: 1px solid #ccc;
-    background-color: #e9ecef;
-    padding: 15px;
-    border-radius: 5px;
-    margin-top: 30px;
-  "
+  class="fade-in hidden panel-box"
 >
   <h3><b>Reroll</b></h3>
   <p>
@@ -70,11 +65,19 @@
   function revealRecipient() {
     // Show the recipient name
     const recipient = document.getElementById("recipient");
-    recipient.style.display = "inline";
-    document.getElementById("rerollSection").classList.add("show");
-    document.getElementById("rerollSection").classList.remove("hidden");
-    document.getElementById("keepBtn").disabled = false; // Enable "Keep" button
+    recipient.style.display = "inline-block";
+    recipient.classList.add("reveal");
     document.getElementById("revealBtn").remove();
+
+    const rerollSection = document.getElementById("rerollSection");
+    if (rerollSection) {
+      rerollSection.classList.add("show");
+      rerollSection.classList.remove("hidden");
+      document.getElementById("keepBtn").disabled = false; // Enable "Keep" button
+    } else {
+      // Rerolls disabled or already used: go straight to the rules
+      keepRecipient();
+    }
   }
 
   async function rerollRecipient() {
@@ -113,7 +116,11 @@
         }
 
         // Update the recipient name
-        document.getElementById("recipient").innerText = data.newName;
+        const recipientEl = document.getElementById("recipient");
+        recipientEl.innerText = data.newName;
+        recipientEl.classList.remove("reveal");
+        void recipientEl.offsetWidth; // restart the animation
+        recipientEl.classList.add("reveal");
 
         // Clear loading state
         status.classList.add("hidden");
@@ -141,7 +148,8 @@
   }
 
   function keepRecipient() {
-    document.getElementById("rerollSection").remove();
+    const rerollSection = document.getElementById("rerollSection");
+    if (rerollSection) rerollSection.remove();
     document.getElementById("finalMessage").classList.add("show");
     document.getElementById("finalMessage").classList.remove("hidden");
   }
