@@ -1,31 +1,96 @@
 {% extends "base.html" %} {% block content %}
+<style>
+  .content { max-width: 960px; }
+  .content table { text-align: left; }
+  .link-input { min-width: 220px; }
+</style>
 <h2>Admin</h2>
+
+{% if message %}
+<div class="alert {{ 'alert-success' if message_ok else 'alert-danger' }}" role="alert">{{ message }}</div>
+{% endif %}
+
+<div class="panel-box" style="margin-top: 0; margin-bottom: 20px">
+  <form method="post" action="{{ url_for('admin_set_budget') }}" class="form-inline justify-content-center">
+    <label for="budget" class="mr-2"><b>Budget</b></label>
+    <input id="budget" name="budget" value="{{ config['budget'] }}" class="form-control mr-2" maxlength="20" style="width: 120px" />
+    <button class="btn btn-primary" style="margin-top: 0">Save</button>
+  </form>
+  <p class="text-muted small" style="margin: 10px 0 0">
+    Shown to everyone, e.g. £10. Leave blank to use the default.
+  </p>
+</div>
+
 <p>
-  {{ count }} of {{ people|length }} people haven't opened their link and drawn
-  yet.
+  {{ count }} of {{ people|length }} people haven't drawn yet.
 </p>
-<table class="table table-sm text-left">
-  <thead>
-    <tr><th>Name</th><th>Status</th><th>Private link</th></tr>
-  </thead>
-  <tbody>
-    {% for p in people %}
-    <tr>
-      <td>{{ p.name }}</td>
-      <td>
-        {% if p.assigned %}<span class="text-success">Drawn</span>{% else %}<span class="text-muted">Waiting</span>{% endif %}
-      </td>
-      <td>
-        <input class="form-control form-control-sm" readonly value="{{ p.link }}" onclick="this.select()" />
-        <button class="btn btn-outline-primary btn-sm" onclick="copyLink(this, '{{ p.link }}')">Copy</button>
-      </td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+
+<div class="table-responsive">
+  <table class="table table-sm">
+    <thead>
+      <tr><th>Name</th><th>Group</th><th>Status</th><th>Private link</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for p in people %}
+      <tr>
+        <td class="align-middle">{{ p.display }}</td>
+        <td class="align-middle">
+          <form method="post" action="{{ url_for('admin_set_group', name=p.name) }}" class="form-inline">
+            <input name="group" value="{{ p.group }}" list="groups" placeholder="none" maxlength="32" class="form-control form-control-sm" style="width: 110px" />
+            <button class="btn btn-outline-primary btn-sm" style="margin-top: 0">Save</button>
+          </form>
+        </td>
+        <td class="align-middle">
+          {% if p.assigned %}<span class="text-success">Drawn</span>{% else %}<span class="text-muted">Waiting</span>{% endif %}
+        </td>
+        <td class="align-middle">
+          <div class="d-flex">
+            <input class="form-control form-control-sm link-input" readonly value="{{ p.link }}" onclick="this.select()" />
+            <button type="button" class="btn btn-outline-primary btn-sm ml-1" style="margin-top: 0" data-link="{{ p.link }}" onclick="copyLink(this)">Copy</button>
+          </div>
+        </td>
+        <td class="align-middle">
+          <form method="post" action="{{ url_for('admin_remove_person', name=p.name) }}" onsubmit="return confirm('Remove {{ p.display }}?')">
+            <button class="btn btn-outline-danger btn-sm" style="margin-top: 0">Remove</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="text-muted">Nobody yet. Add someone below.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<datalist id="groups">
+  {% for g in groups %}<option value="{{ g }}">{% endfor %}
+</datalist>
+
+<div class="panel-box">
+  <h3>Add a person</h3>
+  <form method="post" action="{{ url_for('admin_add_person') }}" class="form-inline justify-content-center">
+    <input name="name" class="form-control mr-2" placeholder="First name" maxlength="32" required />
+    <input name="group" class="form-control mr-2" placeholder="Group (optional)" list="groups" maxlength="32" />
+    <button class="btn btn-primary" style="margin-top: 0">Add</button>
+  </form>
+  <p class="text-muted small" style="margin: 12px 0 0">
+    People in the same group avoid drawing each other where possible.
+  </p>
+</div>
+
+{% if any_drawn %}
+<div class="panel-box">
+  <h3>Reset draws</h3>
+  <p class="small">Clears every draw and reroll. People, groups and links stay the same.</p>
+  <form method="post" action="{{ url_for('admin_reset_draws') }}" onsubmit="return confirm('Clear ALL draws? Everyone will need to draw again.')">
+    <button class="btn btn-outline-danger" style="margin-top: 0">Reset all draws</button>
+  </form>
+</div>
+{% endif %}
+
 <script>
-  function copyLink(btn, link) {
-    navigator.clipboard.writeText(link).then(() => {
+  function copyLink(btn) {
+    navigator.clipboard.writeText(btn.dataset.link).then(() => {
       btn.innerText = "Copied!";
       setTimeout(() => (btn.innerText = "Copy"), 1500);
     });

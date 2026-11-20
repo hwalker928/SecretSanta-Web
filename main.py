@@ -1,4 +1,4 @@
-from flask import Flask, render_template, redirect, jsonify, abort, request, Response
+from flask import Flask, render_template, redirect, jsonify, abort, request, Response, url_for
 import redis
 import random
 import logging
@@ -9,7 +9,9 @@ import io
 import base64
 import functools
 import hmac
+import re
 import secrets
+from urllib.parse import urlparse
 
 # Configure logging
 logging.basicConfig(
@@ -22,9 +24,6 @@ config = {
     "reroll_count": int(os.getenv("REROLL_COUNT", 0)),
     "admin_user": os.getenv("ADMIN_USER", "admin"),
     "admin_password": os.getenv("ADMIN_PASSWORD", ""),
-    "names": [
-        n.strip().lower() for n in os.getenv("VALID_NAMES", "").split(",") if n.strip()
-    ],
     "year": os.getenv("YEAR", datetime.datetime.now().year),
     "budget": os.getenv("BUDGET", "10"),
     "url": os.getenv("URL", "http://localhost:8000"),
@@ -36,21 +35,20 @@ config = {
     "use_qr_checks": os.getenv("DISABLE_QR_CHECKS", "false") == "false",
 }
 
-# Optional: group definitions. Format: "group1:alice,bob;group2:carol,dave"
-name_groups_raw = os.getenv("NAME_GROUPS", "")
-name_groups = {}
-if name_groups_raw:
-    for group_spec in [g.strip() for g in name_groups_raw.split(";") if g.strip()]:
-        if ":" in group_spec:
-            group_name, members = group_spec.split(":", 1)
-            for member in [m.strip() for m in members.split(",") if m.strip()]:
-                name_groups[member.lower()] = group_name.strip()
-
-# store in config for template access
-config["name_groups"] = name_groups
-
-
-print("Name groups loaded:", name_groups)
+# VALID_NAMES / NAME_GROUPS only seed the people list the first time the app
+# starts with an empty database. After that, people and groups are managed on
+# the admin page. NAME_GROUPS format: "group1:alice,bob;group2:carol,dave"
+seed_people = {
+    n.strip().lower(): ""
+    for n in os.getenv("VALID_NAMES", "").split(",")
+    if n.strip()
+}
+for group_spec in [g.strip() for g in os.getenv("NAME_GROUPS", "").split(";") if g.strip()]:
+    if ":" in group_spec:
+        group_name, members = group_spec.split(":", 1)
+        for member in [m.strip().lower() for m in members.split(",") if m.strip()]:
+            if member in seed_people:
+                seed_people[member] = group_name.strip().lower()
 
 app = Flask(__name__)
 
@@ -82,6 +80,19 @@ def get_int(key, default=0):
         return default
 
 
+def get_people():
+    """All participants as {lowercase name: lowercase group or ''}."""
+    return dict(redis_client.hgetall("people"))
+
+
+def ensure_person_state(name):
+    """Create per-person state (recipient, reroll count, private link token)."""
+    redis_client.setnx(f"recipient:{name}", "")
+    redis_client.setnx(f"rerolls:{name}", 0)
+    redis_client.setnx(f"token:{name}", secrets.token_urlsafe(12))
+    redis_client.set(f"tokenowner:{redis_client.get(f'token:{name}')}", name)
+
+
 def pick_recipient(giver, exclude=()):
     """Choose a recipient for `giver`, or None if no safe choice exists.
 
@@ -90,7 +101,8 @@ def pick_recipient(giver, exclude=()):
     `exclude` can block specific names. A candidate is rejected if taking it would leave another
     waiting giver with nobody but themselves to give to.
     """
-    names = set(config["names"])
+    people = get_people()
+    names = set(people)
     assigned = set(redis_client.smembers("assigned_recipients"))
     current = redis_client.get(f"recipient:{giver}")
     if current:
@@ -106,10 +118,9 @@ def pick_recipient(giver, exclude=()):
     candidates = [c for c in pool if not leaves_someone_stuck(c)]
 
     # Prefer recipients from a different group where possible
-    groups = config["name_groups"]
-    giver_group = groups.get(giver)
+    giver_group = people.get(giver)
     if giver_group:
-        different = [c for c in candidates if groups.get(c) != giver_group]
+        different = [c for c in candidates if people.get(c) != giver_group]
         if different:
             candidates = different
 
@@ -118,7 +129,12 @@ def pick_recipient(giver, exclude=()):
 
 @app.context_processor
 def inject_config():
-    return {"config": config}
+    # Budget can be changed on the admin page; fall back to the BUDGET env var
+    try:
+        budget = redis_client.get("setting:budget") or config["budget"]
+    except redis.RedisError:
+        budget = config["budget"]
+    return {"config": {**config, "budget": budget}}
 
 
 @app.route("/")
@@ -128,7 +144,7 @@ def main():
 
 @app.route("/qrcodes")
 def qrcodes():
-    people = config["names"]
+    people = sorted(get_people())
     people_dict = []
 
     for person in people:
@@ -150,7 +166,6 @@ def qrcodes():
     return render_template(
         "qrcodes.html",
         people_dict=people_dict,
-        config=config,
         active=get_int("qr-active") == 1,
     )
 
@@ -184,13 +199,12 @@ def qrscan(person_base64):
     else:
         recipient = "Not assigned yet"
 
-    names = [name.capitalize() for name in config["names"]]
+    names = [name.capitalize() for name in sorted(get_people())]
 
     return render_template(
         "qr.html",
         recipient=recipient.capitalize(),
         names=names,
-        config=config,
         song=config["use_songs"]
         and recipient != "Not assigned yet"
         and os.path.isfile(f"static/songs/{recipient.lower()}.mp3"),
@@ -207,17 +221,25 @@ def qrscantest(recipient):
     else:
         recipient = "Not assigned yet"
 
-    names = [name.capitalize() for name in config["names"]]
+    names = [name.capitalize() for name in sorted(get_people())]
 
     return render_template(
         "qr.html",
         recipient=recipient.capitalize(),
         names=names,
-        config=config,
         song=config["use_songs"]
         and recipient != "Not assigned yet"
         and os.path.isfile(f"static/songs/{recipient.lower()}.mp3"),
     )
+
+
+def same_origin():
+    """Reject cross-site POSTs (browsers resend basic-auth credentials)."""
+    source = request.headers.get("Origin") or request.headers.get("Referer")
+    if not source:
+        return True
+    host = urlparse(source).netloc
+    return host in {request.host, urlparse(config["url"]).netloc}
 
 
 def require_admin(view):
@@ -232,6 +254,8 @@ def require_admin(view):
                 "variable to enable it.",
                 403,
             )
+        if request.method == "POST" and not same_origin():
+            abort(403)
         auth = request.authorization
         if not auth or not hmac.compare_digest(
             (auth.password or "").encode("utf-8"), password.encode("utf-8")
@@ -246,16 +270,31 @@ def require_admin(view):
     return wrapper
 
 
+def admin_redirect(message, ok=True):
+    return redirect(url_for("admin", msg=message, ok=1 if ok else 0))
+
+
+def clean_name(raw):
+    name = (raw or "").strip().lower()
+    return name if re.fullmatch(r"[\w' -]{1,32}", name) else None
+
+
+def clean_group(raw):
+    return (raw or "").strip().lower()[:32]
+
+
 @app.route("/ssadmin")
 @require_admin
 def admin():
     people = []
 
     try:
-        for name in config["names"]:
+        for name, group in sorted(get_people().items()):
             people.append(
                 {
-                    "name": name.capitalize(),
+                    "name": name,
+                    "display": name.capitalize(),
+                    "group": group,
                     "assigned": bool(redis_client.get(f"recipient:{name}")),
                     "link": f"{config['url'].rstrip('/')}/u/{redis_client.get(f'token:{name}')}",
                 }
@@ -269,15 +308,93 @@ def admin():
     return render_template(
         "admin.html",
         people=people,
+        groups=sorted({p["group"] for p in people if p["group"]}),
         count=sum(1 for p in people if not p["assigned"]),
-        config=config,
+        any_drawn=any(p["assigned"] for p in people),
+        message=request.args.get("msg"),
+        message_ok=request.args.get("ok") == "1",
     )
+
+
+@app.route("/ssadmin/budget", methods=["POST"])
+@require_admin
+def admin_set_budget():
+    budget = (request.form.get("budget") or "").strip()
+    if len(budget) > 20:
+        return admin_redirect("Budget must be 20 characters or fewer.", False)
+    if budget:
+        redis_client.set("setting:budget", budget)
+        return admin_redirect(f"Budget set to {budget}.")
+    redis_client.delete("setting:budget")  # blank = back to the BUDGET env default
+    return admin_redirect(f"Budget reset to the default ({config['budget']}).")
+
+
+@app.route("/ssadmin/people", methods=["POST"])
+@require_admin
+def admin_add_person():
+    name = clean_name(request.form.get("name"))
+    if not name:
+        return admin_redirect(
+            "Names must be 1-32 characters: letters, numbers, spaces, - or '.", False
+        )
+
+    with redis_client.lock(ASSIGN_LOCK, timeout=10, blocking_timeout=10):
+        if not redis_client.hsetnx("people", name, clean_group(request.form.get("group"))):
+            return admin_redirect(f"{name.capitalize()} is already in the list.", False)
+        ensure_person_state(name)
+
+    message = f"Added {name.capitalize()}."
+    if redis_client.scard("assigned_recipients"):
+        message += " Draws have already started, so they may not be picked by anyone; reset the draws if that's a problem."
+    return admin_redirect(message)
+
+
+@app.route("/ssadmin/people/<name>/group", methods=["POST"])
+@require_admin
+def admin_set_group(name):
+    if not redis_client.hexists("people", name):
+        abort(404)
+    redis_client.hset("people", name, clean_group(request.form.get("group")))
+    return admin_redirect(f"Updated {name.capitalize()}'s group.")
+
+
+@app.route("/ssadmin/people/<name>/remove", methods=["POST"])
+@require_admin
+def admin_remove_person(name):
+    with redis_client.lock(ASSIGN_LOCK, timeout=10, blocking_timeout=10):
+        if not redis_client.hexists("people", name):
+            abort(404)
+        if redis_client.get(f"recipient:{name}") or name in redis_client.smembers(
+            "assigned_recipients"
+        ):
+            return admin_redirect(
+                f"{name.capitalize()} has already drawn or been drawn by someone. Reset the draws before removing them.",
+                False,
+            )
+        token = redis_client.get(f"token:{name}")
+        redis_client.hdel("people", name)
+        redis_client.delete(f"recipient:{name}", f"rerolls:{name}", f"token:{name}")
+        if token:
+            redis_client.delete(f"tokenowner:{token}")
+    return admin_redirect(f"Removed {name.capitalize()}.")
+
+
+@app.route("/ssadmin/reset", methods=["POST"])
+@require_admin
+def admin_reset_draws():
+    """Clear every draw and reroll count. People, groups and links are kept."""
+    with redis_client.lock(ASSIGN_LOCK, timeout=10, blocking_timeout=10):
+        redis_client.delete("assigned_recipients")
+        for name in get_people():
+            redis_client.set(f"recipient:{name}", "")
+            redis_client.set(f"rerolls:{name}", 0)
+    return admin_redirect("All draws have been reset.")
 
 
 def person_for_token(token):
     """Return the (lowercase) name that owns this private link, or abort(404)."""
     name = redis_client.get(f"tokenowner:{token}")
-    if name not in config["names"]:
+    if not name or name not in get_people():
         abort(404)
     return name
 
@@ -339,7 +456,6 @@ def rules(token):
     return render_template(
         "rules.html",
         chosen_recipient_capital=recipient.capitalize(),
-        config=config,
         token=token,
         reroll_limit=config["reroll_count"],
         rerolls_left=max(0, config["reroll_count"] - rerolls_used),
@@ -393,17 +509,14 @@ def reroll(token):
 
 # Initialise state without clobbering anything already stored (safe across
 # restarts and across multiple gunicorn workers booting at once).
-for _name in config["names"]:
-    redis_client.setnx(f"recipient:{_name}", "")
-    redis_client.setnx(f"rerolls:{_name}", 0)
+if not redis_client.exists("people"):
+    for _name, _group in seed_people.items():
+        redis_client.hsetnx("people", _name, _group)
+for _name in get_people():
+    ensure_person_state(_name)
 redis_client.setnx("qr-active", 0)
 
-# Every person gets a private, unguessable link token (created once, persisted)
-for _name in config["names"]:
-    redis_client.setnx(f"token:{_name}", secrets.token_urlsafe(12))
-    redis_client.set(f"tokenowner:{redis_client.get(f'token:{_name}')}", _name)
-
-print(f"Loaded {len(config['names'])} names.")
+print(f"Loaded {len(get_people())} names.")
 print(f"Loaded songs: {os.listdir('static/songs') if os.path.isdir('static/songs') else []}")
 
 

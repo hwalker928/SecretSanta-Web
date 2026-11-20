@@ -4,6 +4,8 @@
 
 - Random name allocation via a private link per person (shown on the admin page at `/ssadmin`, protected by `ADMIN_PASSWORD`)
 - Prevents being allocated yourself
+- Optional groups (e.g. families) who avoid drawing each other where possible
+- Admin page to add/remove people, edit groups, copy private links and reset draws
 - Reroll functionality
 - Rules list
 - Configurable budget
@@ -19,9 +21,12 @@ services:
     environment:
       ADMIN_USER: Harry
       ADMIN_PASSWORD: change-me # Protects /ssadmin, which lists everyone's private links (admin page is disabled if unset)
+      # Initial people only: used the first time the app starts with an empty database.
+      # After that, add/remove people and set groups on /ssadmin.
       VALID_NAMES: alice,ben,charlie,david
+      NAME_GROUPS: "family1:alice,ben;family2:charlie,david" # Optional: people in a group avoid drawing each other where possible
 
-      BUDGET: £10
+      BUDGET: £10 # Default only; can be changed on /ssadmin
 
       GIVING_DAY: 25
       GIVING_MONTH: 12
