@@ -69,13 +69,15 @@ Valkey can load data files written by Redis up to 7.2, but **not** newer Redis (
 
 Create and manage games on `/ssadmin` (e.g. `family`, `friends`). Each game has its own people, groups, budget, draws and QR codes. Everyone still just uses their personal link, which already belongs to one game.
 
-`VALID_NAMES`/`NAME_GROUPS` only seed a first game on a brand-new install, named by `GAME_ID` (default `default`). Existing installs are migrated automatically into a single game with that ID, and existing links and QR stickers keep working while only one game exists. Once you add a second game, QR codes are per-game: `/qrcodes/<game>` and `/<QR_TOGGLE_URL>/<game>`.
+`VALID_NAMES`/`NAME_GROUPS` only seed a first game on a brand-new install, named by `GAME_ID` (default `default`). Existing installs are migrated automatically into a single game with that ID, and existing private links keep working. QR codes are per-game: `/qrcodes/<game>` and `/<QR_TOGGLE_URL>/<game>`.
 
 ## QR Code Stickers
 
-A QR code is automatically generated per-person, which when scanned on the day that presents are given (configurable in the docker-compose.yml), will reveal who the present is for.
+A QR code is automatically generated per-person from their private link token (so it can't be guessed or forged), which when scanned on the day that presents are given (configurable in the docker-compose.yml), will reveal who the present is for.
 
-You can view all of the QR codes here: http://localhost:8000/qrcodes/<game>
+You can view all of the QR codes (admin login required, since they contain the private link tokens) here: http://localhost:8000/qrcodes/<game>
+
+QR codes printed before this change (they used the person's name rather than their token) no longer work and need reprinting.
 
 The QR codes will not be active until both of the following conditions are true:
 

@@ -187,6 +187,43 @@ def migrate_legacy_data():
         logging.info(f"Migrated existing data into game '{game}'")
 
 
+def same_origin():
+    """Reject cross-site POSTs (browsers resend basic-auth credentials)."""
+    source = request.headers.get("Origin") or request.headers.get("Referer")
+    if not source:
+        return True
+    host = urlparse(source).netloc
+    return host in {request.host, urlparse(config["url"]).netloc}
+
+
+def require_admin(view):
+    """HTTP basic auth using ADMIN_PASSWORD (any username). Disabled if unset."""
+
+    @functools.wraps(view)
+    def wrapper(*args, **kwargs):
+        password = config["admin_password"]
+        if not password:
+            return (
+                "The admin page is disabled. Set the ADMIN_PASSWORD environment "
+                "variable to enable it.",
+                403,
+            )
+        if request.method == "POST" and not same_origin():
+            abort(403)
+        auth = request.authorization
+        if not auth or not hmac.compare_digest(
+            (auth.password or "").encode("utf-8"), password.encode("utf-8")
+        ):
+            return Response(
+                "Authentication required.",
+                401,
+                {"WWW-Authenticate": 'Basic realm="Secret Santa admin"'},
+            )
+        return view(*args, **kwargs)
+
+    return wrapper
+
+
 @app.context_processor
 def inject_config():
     return {"config": config}
@@ -199,17 +236,16 @@ def main():
 
 @app.route("/qrcodes", defaults={"game": None})
 @app.route("/qrcodes/<game>")
+@require_admin  # the QR codes contain each person's private link token
 def qrcodes(game):
     game = require_game(game or only_game() or "")
     people = sorted(get_people(game))
     people_dict = []
 
     for person in people:
-        person_base64_reversed = person.encode("utf-8").hex()[::-1]
+        token = redis_client.get(gk(game, "token", person))
 
-        qr = qrcode.make(
-            f"{config['url']}/qrscan/{game}/{person_base64_reversed}", border=1
-        )
+        qr = qrcode.make(f"{config['url']}/qrscan/{token}", border=1)
         buffer = io.BytesIO()
         qr.save(buffer, format="PNG")
         qr_img_bytes = base64.b64encode(buffer.getvalue()).decode()
@@ -253,10 +289,9 @@ def render_qr_reveal(game, recipient):
     )
 
 
-@app.route("/qrscan/<person_base64>", defaults={"game": None})
-@app.route("/qrscan/<game>/<person_base64>")
-def qrscan(game, person_base64):
-    game = require_game(game or only_game() or "")
+@app.route("/qrscan/<token>")
+def qrscan(token):
+    game, person = person_for_token(token)
 
     if get_int(gk(game, "qr-active")) == 0 and config["use_qr_checks"]:
         return redirect("https://cdn.mtdv.me/video/last_rickmas.mp4")
@@ -267,12 +302,7 @@ def qrscan(game, person_base64):
     ) and config["use_qr_checks"]:
         return redirect("https://cdn.mtdv.me/video/feliz_navidad.mp4")
 
-    try:
-        person = bytes.fromhex(person_base64[::-1]).decode("utf-8")
-    except ValueError:
-        abort(404)
-
-    return render_qr_reveal(game, redis_client.get(gk(game, "recipient", person.lower())))
+    return render_qr_reveal(game, redis_client.get(gk(game, "recipient", person)))
 
 
 @app.route("/qrscan-test/<game>/<recipient>")
@@ -281,43 +311,6 @@ def qrscantest(game, recipient):
         abort(404)  # test route only available with DISABLE_QR_CHECKS=true
 
     return render_qr_reveal(require_game(game), recipient)
-
-
-def same_origin():
-    """Reject cross-site POSTs (browsers resend basic-auth credentials)."""
-    source = request.headers.get("Origin") or request.headers.get("Referer")
-    if not source:
-        return True
-    host = urlparse(source).netloc
-    return host in {request.host, urlparse(config["url"]).netloc}
-
-
-def require_admin(view):
-    """HTTP basic auth using ADMIN_PASSWORD (any username). Disabled if unset."""
-
-    @functools.wraps(view)
-    def wrapper(*args, **kwargs):
-        password = config["admin_password"]
-        if not password:
-            return (
-                "The admin page is disabled. Set the ADMIN_PASSWORD environment "
-                "variable to enable it.",
-                403,
-            )
-        if request.method == "POST" and not same_origin():
-            abort(403)
-        auth = request.authorization
-        if not auth or not hmac.compare_digest(
-            (auth.password or "").encode("utf-8"), password.encode("utf-8")
-        ):
-            return Response(
-                "Authentication required.",
-                401,
-                {"WWW-Authenticate": 'Basic realm="Secret Santa admin"'},
-            )
-        return view(*args, **kwargs)
-
-    return wrapper
 
 
 def admin_redirect(game, message, ok=True):
