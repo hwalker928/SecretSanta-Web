@@ -1,4 +1,4 @@
-from flask import Flask, render_template, redirect, jsonify, abort
+from flask import Flask, render_template, redirect, jsonify, abort, request, Response
 import redis
 import random
 import logging
@@ -7,6 +7,9 @@ import datetime
 import qrcode
 import io
 import base64
+import functools
+import hmac
+import secrets
 
 # Configure logging
 logging.basicConfig(
@@ -18,6 +21,7 @@ config = {
     "port": int(os.getenv("APP_PORT", 8000)),
     "reroll_count": int(os.getenv("REROLL_COUNT", 0)),
     "admin_user": os.getenv("ADMIN_USER", "admin"),
+    "admin_password": os.getenv("ADMIN_PASSWORD", ""),
     "names": [
         n.strip().lower() for n in os.getenv("VALID_NAMES", "").split(",") if n.strip()
     ],
@@ -216,17 +220,46 @@ def qrscantest(recipient):
     )
 
 
+def require_admin(view):
+    """HTTP basic auth using ADMIN_PASSWORD (any username). Disabled if unset."""
+
+    @functools.wraps(view)
+    def wrapper(*args, **kwargs):
+        password = config["admin_password"]
+        if not password:
+            return (
+                "The admin page is disabled. Set the ADMIN_PASSWORD environment "
+                "variable to enable it.",
+                403,
+            )
+        auth = request.authorization
+        if not auth or not hmac.compare_digest(
+            (auth.password or "").encode("utf-8"), password.encode("utf-8")
+        ):
+            return Response(
+                "Authentication required.",
+                401,
+                {"WWW-Authenticate": 'Basic realm="Secret Santa admin"'},
+            )
+        return view(*args, **kwargs)
+
+    return wrapper
+
+
 @app.route("/ssadmin")
+@require_admin
 def admin():
-    names = [name.lower() for name in config["names"]]
-    unassigned = []
+    people = []
 
     try:
-        for name in names:
-            recipient = redis_client.get(f"recipient:{name}")
-            # Treat empty string or None as unassigned
-            if not recipient:
-                unassigned.append(name.capitalize())
+        for name in config["names"]:
+            people.append(
+                {
+                    "name": name.capitalize(),
+                    "assigned": bool(redis_client.get(f"recipient:{name}")),
+                    "link": f"{config['url'].rstrip('/')}/u/{redis_client.get(f'token:{name}')}",
+                }
+            )
     except redis.RedisError as e:
         logging.error(f"Redis error while building admin list: {e}")
         return render_template(
@@ -235,114 +268,101 @@ def admin():
 
     return render_template(
         "admin.html",
-        unassigned=unassigned,
-        count=len(unassigned),
+        people=people,
+        count=sum(1 for p in people if not p["assigned"]),
         config=config,
     )
 
 
-@app.route("/rules/<firstname_base64>/<recipient_base64>")
-def rules(firstname_base64, recipient_base64):
-    # The recipient in the URL is only the one assigned at first draw; always
-    # show the current assignment from Redis so rerolls survive a page reload.
-    try:
-        firstname = bytes.fromhex(firstname_base64[::-1]).decode("utf-8").lower()
-    except ValueError:
+def person_for_token(token):
+    """Return the (lowercase) name that owns this private link, or abort(404)."""
+    name = redis_client.get(f"tokenowner:{token}")
+    if name not in config["names"]:
         abort(404)
+    return name
+
+
+@app.route("/u/<token>")
+def welcome(token):
+    """Landing page for a private link. GET never assigns anything, so link
+    previews/scrapers (WhatsApp etc.) can't trigger a draw."""
+    name = person_for_token(token)
+    return render_template(
+        "welcome.html",
+        token=token,
+        person=name.capitalize(),
+        already_drawn=bool(redis_client.get(f"recipient:{name}")),
+    )
+
+
+@app.route("/u/<token>/draw", methods=["POST"])
+def draw(token):
+    name = person_for_token(token)
 
     try:
-        recipient = redis_client.get(f"recipient:{firstname}")
+        with redis_client.lock(ASSIGN_LOCK, timeout=10, blocking_timeout=10):
+            # Idempotent: if already drawn just show the existing recipient
+            if not redis_client.get(f"recipient:{name}"):
+                chosen_recipient = pick_recipient(name)
+                if not chosen_recipient:
+                    return render_template(
+                        "error.html",
+                        message="No available recipients left. Contact admin for assistance.",
+                    )
+                redis_client.set(f"recipient:{name}", chosen_recipient)
+                redis_client.sadd("assigned_recipients", chosen_recipient)
     except redis.RedisError as e:
         logging.error(f"Redis error: {e}")
         return render_template(
             "error.html", message="Internal server error. Please try again later."
         )
 
-    if firstname not in config["names"] or not recipient:
+    return redirect(f"/u/{token}/rules", code=303)
+
+
+@app.route("/u/<token>/rules")
+def rules(token):
+    name = person_for_token(token)
+
+    try:
+        recipient = redis_client.get(f"recipient:{name}")
+        rerolls_used = get_int(f"rerolls:{name}")
+    except redis.RedisError as e:
+        logging.error(f"Redis error: {e}")
         return render_template(
-            "error.html",
-            message=f"No recipient found. Contact {config['admin_user']} for assistance.",
+            "error.html", message="Internal server error. Please try again later."
         )
+
+    if not recipient:
+        return redirect(f"/u/{token}")
 
     return render_template(
         "rules.html",
         chosen_recipient_capital=recipient.capitalize(),
         config=config,
-        firstname=firstname,
+        token=token,
         reroll_limit=config["reroll_count"],
-        rerolls_left=max(0, config["reroll_count"] - get_int(f"rerolls:{firstname}")),
+        rerolls_left=max(0, config["reroll_count"] - rerolls_used),
     )
 
 
-@app.route("/name/<firstname>")
-def name(firstname: str):
-    firstname_lower = firstname.strip().lower()
-    if firstname_lower not in config["names"]:
-        return render_template(
-            "error.html",
-            message=(
-                "Please make sure that you have spelled your name correctly. "
-                f"Contact {config['admin_user']} if you believe there is a mistake."
-            ),
-        )
+@app.route("/u/<token>/reroll", methods=["POST"])
+def reroll(token):
+    name = person_for_token(token)
 
-    try:
-        with redis_client.lock(ASSIGN_LOCK, timeout=10, blocking_timeout=10):
-            # Check if the user has already been assigned a recipient
-            if redis_client.get(f"recipient:{firstname_lower}"):
-                return render_template(
-                    "error.html",
-                    message=f"You have already been assigned a recipient. Contact {config['admin_user']} for assistance.",
-                )
-
-            chosen_recipient = pick_recipient(firstname_lower)
-            if not chosen_recipient:
-                return render_template(
-                    "error.html",
-                    message="No available recipients left. Contact admin for assistance.",
-                )
-
-            redis_client.set(f"recipient:{firstname_lower}", chosen_recipient)
-            redis_client.sadd("assigned_recipients", chosen_recipient)
-
-        firstname_lower_base64 = firstname_lower.encode("utf-8").hex()[::-1]
-        chosen_recipient_base64 = chosen_recipient.encode("utf-8").hex()[::-1]
-
-        return redirect(f"/rules/{firstname_lower_base64}/{chosen_recipient_base64}")
-
-    except redis.RedisError as e:
-        logging.error(f"Redis error: {e}")
-        return render_template(
-            "error.html", message="Internal server error. Please try again later."
-        )
-
-
-@app.route("/reroll/<firstname>", methods=["POST"])
-def reroll(firstname):
     if config["reroll_count"] == 0:
         return jsonify({"error": "Rerolls are disabled."})
 
-    firstname_lower = firstname.strip().lower()
-    if firstname_lower not in config["names"]:
-        return jsonify(
-            {
-                "error": (
-                    "Please make sure that you have spelled your name correctly. "
-                    f"Contact {config['admin_user']} if you believe there is a mistake."
-                )
-            }
-        )
-
     try:
         with redis_client.lock(ASSIGN_LOCK, timeout=10, blocking_timeout=10):
-            if get_int(f"rerolls:{firstname_lower}") >= config["reroll_count"]:
+            if get_int(f"rerolls:{name}") >= config["reroll_count"]:
                 return jsonify(
                     {
                         "error": f"You have reached the maximum number of rerolls ({config['reroll_count']})."
                     }
                 )
 
-            old_recipient = redis_client.get(f"recipient:{firstname_lower}")
+            old_recipient = redis_client.get(f"recipient:{name}")
             if not old_recipient:
                 return jsonify(
                     {
@@ -351,7 +371,7 @@ def reroll(firstname):
                 )
 
             # The old recipient is released and may be picked again
-            chosen_recipient = pick_recipient(firstname_lower)
+            chosen_recipient = pick_recipient(name)
             if not chosen_recipient:
                 return jsonify(
                     {
@@ -360,9 +380,9 @@ def reroll(firstname):
                 )
 
             redis_client.srem("assigned_recipients", old_recipient)
-            redis_client.set(f"recipient:{firstname_lower}", chosen_recipient)
+            redis_client.set(f"recipient:{name}", chosen_recipient)
             redis_client.sadd("assigned_recipients", chosen_recipient)
-            redis_client.incr(f"rerolls:{firstname_lower}")
+            redis_client.incr(f"rerolls:{name}")
 
         return jsonify({"newName": chosen_recipient.capitalize()})
 
@@ -377,6 +397,11 @@ for _name in config["names"]:
     redis_client.setnx(f"recipient:{_name}", "")
     redis_client.setnx(f"rerolls:{_name}", 0)
 redis_client.setnx("qr-active", 0)
+
+# Every person gets a private, unguessable link token (created once, persisted)
+for _name in config["names"]:
+    redis_client.setnx(f"token:{_name}", secrets.token_urlsafe(12))
+    redis_client.set(f"tokenowner:{redis_client.get(f'token:{_name}')}", _name)
 
 print(f"Loaded {len(config['names'])} names.")
 print(f"Loaded songs: {os.listdir('static/songs') if os.path.isdir('static/songs') else []}")

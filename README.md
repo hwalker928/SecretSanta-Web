@@ -2,7 +2,7 @@
 
 ## Features
 
-- Random name allocation
+- Random name allocation via a private link per person (shown on the admin page at `/ssadmin`, protected by `ADMIN_PASSWORD`)
 - Prevents being allocated yourself
 - Reroll functionality
 - Rules list
@@ -18,6 +18,7 @@ services:
     image: ghcr.io/hwalker928/secretsanta:latest
     environment:
       ADMIN_USER: Harry
+      ADMIN_PASSWORD: change-me # Protects /ssadmin, which lists everyone's private links (admin page is disabled if unset)
       VALID_NAMES: alice,ben,charlie,david
 
       BUDGET: £10

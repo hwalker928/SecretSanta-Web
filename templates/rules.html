@@ -94,7 +94,7 @@
         status.classList.remove("hidden");
 
         // Make POST request to /reroll endpoint
-        const response = await fetch("/reroll/{{ firstname }}", {
+        const response = await fetch("/u/{{ token }}/reroll", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
         });

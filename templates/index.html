@@ -2,30 +2,7 @@
 <img src="{{ url_for('static', filename='ss.svg') }}" alt="Secret Santa" />
 <h2>Secret Santa {{ config["year"] }}</h2>
 <p>
-  Enter your first name to find out who you are buying for. The budget is
-  <b>{{ config["budget"] }}</b>.
+  Please use the personal link you were sent to find out who you are buying
+  for. If you can't find it, contact {{ config["admin_user"] }}.
 </p>
-<form id="nameForm" autocomplete="off">
-  <input
-    id="nameInput"
-    class="form-control form-control-lg text-center"
-    type="text"
-    placeholder="Your first name"
-    maxlength="16"
-    autocapitalize="words"
-    autofocus
-    required
-  />
-  <button type="submit" class="btn btn-primary btn-lg btn-block">
-    Continue
-  </button>
-</form>
-<script>
-  document.getElementById("nameForm").addEventListener("submit", (e) => {
-    e.preventDefault();
-    const name = document.getElementById("nameInput").value.trim();
-    if (!name) return;
-    window.location.href = "/name/" + encodeURIComponent(name);
-  });
-</script>
 {% endblock %}
