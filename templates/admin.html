@@ -48,6 +48,7 @@
           <div class="d-flex">
             <input class="form-control form-control-sm link-input" readonly value="{{ p.link }}" onclick="this.select()" />
             <button type="button" class="btn btn-outline-primary btn-sm ml-1" style="margin-top: 0" data-link="{{ p.link }}" onclick="copyLink(this)">Copy</button>
+            <button type="button" class="btn btn-outline-primary btn-sm ml-1" style="margin-top: 0; white-space: nowrap" data-link="{{ p.link }}" onclick="copyMessage(this)">Copy message</button>
           </div>
         </td>
         <td class="align-middle">
@@ -107,11 +108,36 @@
 </div>
 
 <script>
-  function copyLink(btn) {
-    navigator.clipboard.writeText(btn.dataset.link).then(() => {
+  const BUDGET = {{ budget|tojson }};
+  const REROLLS = {{ reroll_count|tojson }};
+
+  function copyText(btn, text) {
+    const label = btn.innerText;
+    navigator.clipboard.writeText(text).then(() => {
       btn.innerText = "Copied!";
-      setTimeout(() => (btn.innerText = "Copy"), 1500);
+      setTimeout(() => (btn.innerText = label), 1500);
     });
+  }
+
+  function copyLink(btn) {
+    copyText(btn, btn.dataset.link);
+  }
+
+  function copyMessage(btn) {
+    let msg =
+      "Secret Santa time! 🎅\n\n" +
+      "Your private link to find out who you're buying for:\n" +
+      btn.dataset.link + "\n\n" +
+      "Keep it to yourself, and remember who you got. The budget is " + BUDGET + ".\n\n";
+    if (REROLLS > 0) {
+      msg +=
+        "You have " + REROLLS + (REROLLS === 1 ? " reroll" : " rerolls") +
+        " if you can't buy for your person. " +
+        (REROLLS === 1 ? "It's" : "They're") + " final, and you could get the same person again, so use " +
+        (REROLLS === 1 ? "it" : "them") + " carefully!\n\n";
+    }
+    msg += "Happy gifting! 🎁";
+    copyText(btn, msg);
   }
 </script>
 {% endblock %}

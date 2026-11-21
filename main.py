@@ -478,6 +478,7 @@ def admin_game(game):
         "admin.html",
         game=game,
         budget=get_budget(game),
+        reroll_count=get_config()["reroll_count"],
         people=people,
         groups=sorted({p["group"] for p in people if p["group"]}),
         count=sum(1 for p in people if not p["assigned"]),
